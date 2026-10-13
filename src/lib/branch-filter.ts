@@ -1,0 +1,132 @@
+import { GenealogyData, Individual, BranchScope } from '../types/genealogy';
+
+export function getBranchIndividuals(
+  data: GenealogyData,
+  rootPersonId: string,
+  scope: BranchScope
+): Set<string> {
+  const allowed = new Set<string>();
+  const root = data.individuals[rootPersonId];
+  if (!root) return new Set(Object.keys(data.individuals));
+
+  if (scope === 'all') {
+    return new Set(Object.keys(data.individuals));
+  }
+
+  // Always include root person
+  allowed.add(rootPersonId);
+
+  // Find parents
+  let fatherId: string | undefined;
+  let motherId: string | undefined;
+
+  for (const famId of root.familiesAsChild) {
+    const fam = data.families[famId];
+    if (fam) {
+      if (fam.husbandId) fatherId = fam.husbandId;
+      if (fam.wifeId) motherId = fam.wifeId;
+    }
+  }
+
+  const startId = scope === 'paternal' ? fatherId : scope === 'maternal' ? motherId : rootPersonId;
+  if (!startId) return allowed;
+
+  // BFS / DFS to collect all ancestors and descendants along this line
+  const queue = [startId];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
+    allowed.add(currentId);
+
+    const ind = data.individuals[currentId];
+    if (!ind) continue;
+
+    // Add ancestors
+    for (const famId of ind.familiesAsChild) {
+      const fam = data.families[famId];
+      if (fam) {
+        if (fam.husbandId && !visited.has(fam.husbandId)) queue.push(fam.husbandId);
+        if (fam.wifeId && !visited.has(fam.wifeId)) queue.push(fam.wifeId);
+      }
+    }
+
+    // Add immediate spouses and children for context
+    for (const famId of ind.familiesAsSpouse) {
+      const fam = data.families[famId];
+      if (fam) {
+        if (fam.husbandId && fam.husbandId !== currentId) allowed.add(fam.husbandId);
+        if (fam.wifeId && fam.wifeId !== currentId) allowed.add(fam.wifeId);
+        for (const childId of fam.childrenIds) {
+          allowed.add(childId);
+        }
+      }
+    }
+  }
+
+  return allowed;
+}
+
+export function isLiving(person: Individual): boolean {
+  if (person.death && (person.death.date || person.death.place)) {
+    return false;
+  }
+  const currentYear = new Date().getFullYear();
+  if (person.birth?.parsedDate?.year) {
+    return currentYear - person.birth.parsedDate.year < 100;
+  }
+  // Without birth year and without death, check generation or assume living if recent
+  return false;
+}
+
+export function filterGenealogyData(
+  data: GenealogyData,
+  rootPersonId: string,
+  scope: BranchScope,
+  hideLiving: boolean
+): GenealogyData {
+  const allowedIds = getBranchIndividuals(data, rootPersonId, scope);
+
+  const filteredIndividuals: Record<string, Individual> = {};
+  for (const [id, ind] of Object.entries(data.individuals)) {
+    if (!allowedIds.has(id)) continue;
+
+    if (hideLiving && isLiving(ind)) {
+      // Redact sensitive details of living individuals for guest/branch link
+      filteredIndividuals[id] = {
+        ...ind,
+        name: `${ind.surname || ''} (Vivant - Masqué)`.trim(),
+        givenName: 'Confidentiel',
+        birth: ind.birth?.parsedDate?.year ? { parsedDate: { raw: `${ind.birth.parsedDate.year}`, year: ind.birth.parsedDate.year } } : undefined,
+        notes: ['Données masquées pour préserver la vie privée des personnes vivantes.'],
+        residences: [],
+      };
+    } else {
+      filteredIndividuals[id] = ind;
+    }
+  }
+
+  // Filter families where at least one member is visible
+  const filteredFamilies: Record<string, any> = {};
+  for (const [fId, fam] of Object.entries(data.families)) {
+    const husbVisible = fam.husbandId && allowedIds.has(fam.husbandId);
+    const wifeVisible = fam.wifeId && allowedIds.has(fam.wifeId);
+    const anyChildVisible = fam.childrenIds.some(cid => allowedIds.has(cid));
+
+    if (husbVisible || wifeVisible || anyChildVisible) {
+      filteredFamilies[fId] = {
+        ...fam,
+        childrenIds: fam.childrenIds.filter(cid => allowedIds.has(cid)),
+      };
+    }
+  }
+
+  return {
+    individuals: filteredIndividuals,
+    families: filteredFamilies,
+    rootPersonId: allowedIds.has(rootPersonId) ? rootPersonId : Object.keys(filteredIndividuals)[0],
+    sourceHeader: data.sourceHeader,
+  };
+}
