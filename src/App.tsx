@@ -17,7 +17,23 @@ import { getStoredArchives, saveStoredArchives } from './lib/archive-store';
 import { filterGenealogyData } from './lib/branch-filter';
 import { realtimeClient } from './lib/realtime-client';
 import { hashPassword } from './lib/crypto';
-import { Shield, Sparkles, AlertCircle, RefreshCw, Database } from 'lucide-react';
+import { 
+  auth, 
+  loginWithGoogle, 
+  logoutUser, 
+  testFirestoreConnection 
+} from './lib/firebase';
+import { 
+  saveTreeToFirestore, 
+  subscribeToTree, 
+  saveArchiveToFirestore, 
+  deleteArchiveFromFirestore, 
+  subscribeToArchives, 
+  saveAccessToFirestore, 
+  subscribeToAccessList 
+} from './lib/firestore-sync';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { Shield, Sparkles, Database } from 'lucide-react';
 
 const LOCAL_DATA_KEY = 'genealogor_tree_data_v2';
 const ACCESS_LIST_KEY = 'genealogor_access_list_v2';
@@ -35,6 +51,10 @@ export default function App() {
   const [archives, setArchives] = useState<ArchiveDocument[]>(() => getStoredArchives());
   const [activeTab, setActiveTab] = useState<ActiveTab>('tree');
   const [selectedPersonId, setSelectedPersonId] = useState<string>(() => data.rootPersonId || Object.keys(data.individuals)[0]);
+
+  // Firebase Auth & Cloud Sync state
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
 
   // Modals state
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -66,7 +86,55 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Check URL parameters for private share links on initial load
+  // 1. Initialize Firebase Auth and Connection Verification
+  useEffect(() => {
+    testFirestoreConnection().then(ok => {
+      if (ok) setIsCloudSynced(true);
+    });
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (user) {
+        showToast(`Connecté avec Google : ${user.displayName || user.email}`);
+        setIsCloudSynced(true);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // 2. Subscribe to Firestore when room/tree changes and user is ready
+  useEffect(() => {
+    if (!roomId) return;
+
+    const unsubTree = subscribeToTree(roomId, (remoteData) => {
+      if (remoteData && Object.keys(remoteData.individuals).length > 0) {
+        setData(remoteData);
+        setIsCloudSynced(true);
+      }
+    });
+
+    const unsubArch = subscribeToArchives(roomId, (remoteArchives) => {
+      if (remoteArchives && remoteArchives.length > 0) {
+        setArchives(remoteArchives);
+        setIsCloudSynced(true);
+      }
+    });
+
+    const unsubAccess = subscribeToAccessList(roomId, (remoteAccess) => {
+      if (remoteAccess && remoteAccess.length > 0) {
+        setAccessList(remoteAccess);
+      }
+    });
+
+    return () => {
+      unsubTree();
+      unsubArch();
+      unsubAccess();
+    };
+  }, [roomId]);
+
+  // 3. Check URL parameters for private share links on initial load
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const urlParams = new URLSearchParams(window.location.search);
@@ -80,7 +148,6 @@ export default function App() {
     }
 
     if (tokenParam) {
-      // Find matching access rule or create one from token
       const matchingAccess = accessList.find(a => a.shareToken === tokenParam);
       if (matchingAccess) {
         if (matchingAccess.passwordHash) {
@@ -97,13 +164,13 @@ export default function App() {
         setIsUnlocked(true);
       }
     }
-  }, []);
+  }, [accessList]);
 
-  // Initialize Real-time WebSocket connection
+  // 4. Initialize Real-time WebSocket connection
   useEffect(() => {
     realtimeClient.init(
       roomId, 
-      userRole === 'admin' ? 'Administrateur' : userRole === 'editor' ? 'Éditeur' : 'Visiteur',
+      currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : userRole === 'editor' ? 'Éditeur' : 'Visiteur'),
       currentBranchScope
     );
 
@@ -149,9 +216,9 @@ export default function App() {
       unsubPeerLeft();
       unsubSync();
     };
-  }, [roomId, currentBranchScope, userRole]);
+  }, [roomId, currentBranchScope, userRole, currentUser]);
 
-  // Save changes locally
+  // 5. Local Storage Fallback Persistence
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(data));
@@ -167,6 +234,24 @@ export default function App() {
       localStorage.setItem(ACCESS_LIST_KEY, JSON.stringify(accessList));
     } catch (e) {}
   }, [accessList]);
+
+  // Auth Handlers
+  const handleLogin = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (e) {
+      showToast('Connexion Google annulée ou impossible.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      showToast('Déconnecté.');
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Handle unlocking via passphrase
   const handleUnlockWithPassword = async (enteredPassword: string): Promise<boolean> => {
@@ -199,49 +284,102 @@ export default function App() {
     return counts;
   }, [archives]);
 
-  // Handlers for modifying tree & archives with real-time broadcast
-  const handleUpdatePerson = (updated: Individual) => {
-    setData(prev => {
-      const next = {
-        ...prev,
-        individuals: { ...prev.individuals, [updated.id]: updated },
-      };
-      return next;
-    });
+  // Handlers for modifying tree & archives with Firestore sync + realtime broadcast
+  const handleUpdatePerson = async (updated: Individual) => {
+    const nextData = {
+      ...data,
+      individuals: { ...data.individuals, [updated.id]: updated },
+    };
+    setData(nextData);
+    
+    // Broadcast via WebSocket
     realtimeClient.sendAction('person:edit', updated);
+
+    // Persist to Firestore if user is authenticated or room is active
+    try {
+      await saveTreeToFirestore(roomId, nextData, currentUser);
+      setIsCloudSynced(true);
+    } catch (e) {
+      console.warn('Firestore sync fallback', e);
+    }
+
     showToast(`Fiche de ${updated.name} enregistrée.`);
   };
 
-  const handleAddArchive = (newDoc: ArchiveDocument) => {
+  const handleAddArchive = async (newDoc: ArchiveDocument) => {
     setArchives(prev => [newDoc, ...prev]);
     realtimeClient.sendAction('archive:add', newDoc);
+
+    try {
+      await saveArchiveToFirestore(roomId, newDoc, currentUser);
+      setIsCloudSynced(true);
+    } catch (e) {
+      console.warn('Firestore archive save fallback', e);
+    }
+
     showToast(`Acte archivé : ${newDoc.title}`);
   };
 
-  const handleUpdateArchive = (updated: ArchiveDocument) => {
+  const handleUpdateArchive = async (updated: ArchiveDocument) => {
     setArchives(prev => prev.map(a => a.id === updated.id ? updated : a));
     realtimeClient.sendAction('archive:add', updated);
+
+    try {
+      await saveArchiveToFirestore(roomId, updated, currentUser);
+      setIsCloudSynced(true);
+    } catch (e) {
+      console.warn('Firestore archive update fallback', e);
+    }
+
     showToast(`Acte mis à jour : ${updated.title}`);
   };
 
-  const handleDeleteArchive = (id: string) => {
+  const handleDeleteArchive = async (id: string) => {
     setArchives(prev => prev.filter(a => a.id !== id));
+    
+    try {
+      await deleteArchiveFromFirestore(roomId, id);
+    } catch (e) {
+      console.warn('Firestore delete fallback', e);
+    }
+
     showToast('Acte supprimé du fonds d\'archives.');
   };
 
-  const handleLoadGedcom = (newData: GenealogyData) => {
+  const handleLoadGedcom = async (newData: GenealogyData) => {
     setData(newData);
     if (newData.rootPersonId) setSelectedPersonId(newData.rootPersonId);
     realtimeClient.sendAction('tree:update', newData);
-    showToast('Nouvel arbre GEDCOM chargé avec succès.');
+
+    try {
+      await saveTreeToFirestore(roomId, newData, currentUser);
+      setIsCloudSynced(true);
+    } catch (e) {
+      console.warn('Firestore sync fallback', e);
+    }
+
+    showToast('Nouvel arbre GEDCOM chargé et synchronisé.');
   };
 
-  const handleResetSample = () => {
+  const handleResetSample = async () => {
     const sample = getSampleGenealogy();
     setData(sample);
     setSelectedPersonId(sample.rootPersonId || Object.keys(sample.individuals)[0]);
     realtimeClient.sendAction('tree:update', sample);
+
+    try {
+      await saveTreeToFirestore(roomId, sample, currentUser);
+    } catch (e) {}
+
     showToast('Arbre de démonstration restauré.');
+  };
+
+  const handleAddAccessRule = async (newAcc: BranchAccess) => {
+    setAccessList(prev => [newAcc, ...prev]);
+    try {
+      await saveAccessToFirestore(roomId, newAcc);
+    } catch (e) {}
+    showToast(`Lien pour ${newAcc.name} créé.`);
   };
 
   // If private link is protected and locked, show passphrase screen
@@ -272,6 +410,10 @@ export default function App() {
         connectedPeerCount={connectedPeerCount}
         isWsConnected={isWsConnected}
         treeTitle={data.sourceHeader || 'Famille Martin'}
+        currentUser={currentUser}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
+        isCloudSynced={isCloudSynced}
       />
 
       {/* Main Content Area */}
@@ -373,10 +515,7 @@ export default function App() {
         data={data}
         roomId={roomId}
         accessList={accessList}
-        onAddAccess={(newAcc) => {
-          setAccessList(prev => [newAcc, ...prev]);
-          showToast(`Lien pour ${newAcc.name} créé.`);
-        }}
+        onAddAccess={handleAddAccessRule}
         onDeleteAccess={(id) => {
           setAccessList(prev => prev.filter(a => a.id !== id));
           showToast('Lien d\'accès révoqué.');
@@ -404,7 +543,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-stone-200/80 bg-stone-100/60 py-4 px-6 text-center text-xs text-stone-500 font-mono">
-        <span>Genealogor · Recherche historique, archives numérisées et collaboration familiale sécurisée</span>
+        <span>Genealogor · Recherche historique, archives numérisées, synchronisation Firestore et collaboration familiale</span>
       </footer>
 
     </div>
