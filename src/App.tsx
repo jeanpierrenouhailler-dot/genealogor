@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { TreeView } from './components/views/TreeView';
 import { ProfileView } from './components/views/ProfileView';
@@ -9,6 +9,7 @@ import { StatsView } from './components/views/StatsView';
 import { ShareModal } from './components/ShareModal';
 import { ExportImportModal } from './components/ExportImportModal';
 import { EditPersonModal } from './components/views/EditPersonModal';
+import { MergeModal } from './components/views/MergeModal';
 import { PassphraseScreen } from './components/PassphraseScreen';
 
 import { GenealogyData, Individual, ArchiveDocument, BranchAccess, BranchRole, BranchScope } from './types/genealogy';
@@ -16,7 +17,16 @@ import { getSampleGenealogy } from './lib/sample-data';
 import { getStoredArchives, saveStoredArchives } from './lib/archive-store';
 import { filterGenealogyData } from './lib/branch-filter';
 import { realtimeClient } from './lib/realtime-client';
-import { hashPassword } from './lib/crypto';
+import { verifyPassword } from './lib/crypto';
+import { validateChronology } from './lib/validation';
+import { 
+  STORAGE_KEYS, 
+  setVersionedItem, 
+  getVersionedItem, 
+  addPendingChange, 
+  getPendingChanges, 
+  clearPendingChanges 
+} from './lib/storage-manager';
 import { 
   auth, 
   loginWithGoogle, 
@@ -33,41 +43,38 @@ import {
   subscribeToAccessList 
 } from './lib/firestore-sync';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { Shield, Sparkles, Database } from 'lucide-react';
-
-const LOCAL_DATA_KEY = 'genealogor_tree_data_v2';
-const ACCESS_LIST_KEY = 'genealogor_access_list_v2';
+import { Shield, Sparkles, Database, GitMerge, AlertTriangle } from 'lucide-react';
 
 export default function App() {
-  // Main state
+  // Main state with versioned storage & recovery
   const [data, setData] = useState<GenealogyData>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_DATA_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return getSampleGenealogy();
+    const res = getVersionedItem<GenealogyData>(STORAGE_KEYS.TREE, getSampleGenealogy());
+    return res.data;
   });
 
-  const [archives, setArchives] = useState<ArchiveDocument[]>(() => getStoredArchives());
+  const [archives, setArchives] = useState<ArchiveDocument[]>(() => {
+    const res = getVersionedItem<ArchiveDocument[]>(STORAGE_KEYS.ARCHIVES, getStoredArchives());
+    return res.data;
+  });
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('tree');
   const [selectedPersonId, setSelectedPersonId] = useState<string>(() => data.rootPersonId || Object.keys(data.individuals)[0]);
 
   // Firebase Auth & Cloud Sync state
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(false);
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
 
   // Modals state
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Individual | null>(null);
 
   // Access control & Private branch links
   const [accessList, setAccessList] = useState<BranchAccess[]>(() => {
-    try {
-      const saved = localStorage.getItem(ACCESS_LIST_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [];
+    const res = getVersionedItem<BranchAccess[]>(STORAGE_KEYS.ACCESS, []);
+    return res.data;
   });
 
   const [currentBranchScope, setCurrentBranchScope] = useState<BranchScope>('all');
@@ -86,6 +93,9 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Chronological anomalies detection
+  const anomalies = useMemo(() => validateChronology(data), [data]);
+
   // 1. Initialize Firebase Auth and Connection Verification
   useEffect(() => {
     testFirestoreConnection().then(ok => {
@@ -94,6 +104,7 @@ export default function App() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      setAuthReady(true);
       if (user) {
         showToast(`Connecté avec Google : ${user.displayName || user.email}`);
         setIsCloudSynced(true);
@@ -103,20 +114,33 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // 2. Subscribe to Firestore when room/tree changes and user is ready
+  // 2. Subscribe to Firestore ONLY when auth is ready and user is authenticated
   useEffect(() => {
-    if (!roomId) return;
+    if (!authReady || !currentUser || !roomId) return;
 
-    const unsubTree = subscribeToTree(roomId, (remoteData) => {
-      if (remoteData && Object.keys(remoteData.individuals).length > 0) {
-        setData(remoteData);
-        setIsCloudSynced(true);
+    const unsubTree = subscribeToTree(
+      roomId, 
+      (remoteData) => {
+        if (remoteData && Object.keys(remoteData.individuals).length > 0) {
+          setData(remoteData);
+          setVersionedItem(STORAGE_KEYS.TREE, remoteData);
+          setIsCloudSynced(true);
+        }
+      },
+      () => {
+        // Le document n'existe pas encore dans Firestore : l'initialiser avec l'arbre local
+        if (currentUser) {
+          saveTreeToFirestore(roomId, data, currentUser).then(() => {
+            setIsCloudSynced(true);
+          }).catch(console.warn);
+        }
       }
-    });
+    );
 
     const unsubArch = subscribeToArchives(roomId, (remoteArchives) => {
       if (remoteArchives && remoteArchives.length > 0) {
         setArchives(remoteArchives);
+        setVersionedItem(STORAGE_KEYS.ARCHIVES, remoteArchives);
         setIsCloudSynced(true);
       }
     });
@@ -124,6 +148,7 @@ export default function App() {
     const unsubAccess = subscribeToAccessList(roomId, (remoteAccess) => {
       if (remoteAccess && remoteAccess.length > 0) {
         setAccessList(remoteAccess);
+        setVersionedItem(STORAGE_KEYS.ACCESS, remoteAccess);
       }
     });
 
@@ -132,7 +157,7 @@ export default function App() {
       unsubArch();
       unsubAccess();
     };
-  }, [roomId]);
+  }, [authReady, currentUser, roomId]);
 
   // 3. Check URL parameters for private share links on initial load
   useEffect(() => {
@@ -150,7 +175,7 @@ export default function App() {
     if (tokenParam) {
       const matchingAccess = accessList.find(a => a.shareToken === tokenParam);
       if (matchingAccess) {
-        if (matchingAccess.passwordHash) {
+        if (matchingAccess.passwordHash || matchingAccess.password) {
           setIsUnlocked(false);
           setPendingBranchAccess(matchingAccess);
         } else {
@@ -176,6 +201,17 @@ export default function App() {
 
     const unsubConn = realtimeClient.on('connection:change', (info) => {
       setIsWsConnected(info.connected);
+      if (info.connected) {
+        // Traiter les modifications en attente hors ligne
+        const pending = getPendingChanges();
+        if (pending.length > 0) {
+          pending.forEach(change => {
+            realtimeClient.sendAction(change.action, change.payload);
+          });
+          clearPendingChanges();
+          showToast(`${pending.length} modification(s) hors-ligne synchronisée(s).`);
+        }
+      }
     });
 
     const unsubRoom = realtimeClient.on('room:info', (info) => {
@@ -194,17 +230,26 @@ export default function App() {
     const unsubSync = realtimeClient.on('sync:action', (msg) => {
       if (msg.action === 'tree:update' && msg.payload) {
         setData(msg.payload);
+        setVersionedItem(STORAGE_KEYS.TREE, msg.payload);
         showToast('Arbre généalogique synchronisé en direct.');
       } else if (msg.action === 'person:edit' && msg.payload) {
         const updatedInd = msg.payload as Individual;
-        setData(prev => ({
-          ...prev,
-          individuals: { ...prev.individuals, [updatedInd.id]: updatedInd }
-        }));
+        setData(prev => {
+          const next = {
+            ...prev,
+            individuals: { ...prev.individuals, [updatedInd.id]: updatedInd }
+          };
+          setVersionedItem(STORAGE_KEYS.TREE, next);
+          return next;
+        });
         showToast(`Fiche de ${updatedInd.name} mise à jour en direct.`);
       } else if (msg.action === 'archive:add' && msg.payload) {
         const newArchive = msg.payload as ArchiveDocument;
-        setArchives(prev => [newArchive, ...prev.filter(a => a.id !== newArchive.id)]);
+        setArchives(prev => {
+          const next = [newArchive, ...prev.filter(a => a.id !== newArchive.id)];
+          setVersionedItem(STORAGE_KEYS.ARCHIVES, next);
+          return next;
+        });
         showToast(`Nouvel acte numérisé ajouté : ${newArchive.title}`);
       }
     });
@@ -217,23 +262,6 @@ export default function App() {
       unsubSync();
     };
   }, [roomId, currentBranchScope, userRole, currentUser]);
-
-  // 5. Local Storage Fallback Persistence
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(data));
-    } catch (e) {}
-  }, [data]);
-
-  useEffect(() => {
-    saveStoredArchives(archives);
-  }, [archives]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ACCESS_LIST_KEY, JSON.stringify(accessList));
-    } catch (e) {}
-  }, [accessList]);
 
   // Auth Handlers
   const handleLogin = async () => {
@@ -256,8 +284,15 @@ export default function App() {
   // Handle unlocking via passphrase
   const handleUnlockWithPassword = async (enteredPassword: string): Promise<boolean> => {
     if (!pendingBranchAccess) return false;
-    const inputHash = await hashPassword(enteredPassword);
-    if (inputHash === pendingBranchAccess.passwordHash || enteredPassword === pendingBranchAccess.password) {
+    let isValid = false;
+
+    if (pendingBranchAccess.passwordHash) {
+      isValid = await verifyPassword(enteredPassword, pendingBranchAccess.passwordHash);
+    } else if (pendingBranchAccess.password) {
+      isValid = enteredPassword === pendingBranchAccess.password;
+    }
+
+    if (isValid) {
       setCurrentBranchScope(pendingBranchAccess.branch);
       setUserRole(pendingBranchAccess.role);
       setIsUnlocked(true);
@@ -268,13 +303,13 @@ export default function App() {
   };
 
   // Branch filtering: get active tree data for current viewer
-  const effectiveData = React.useMemo(() => {
+  const effectiveData = useMemo(() => {
     if (currentBranchScope === 'all') return data;
     return filterGenealogyData(data, data.rootPersonId || Object.keys(data.individuals)[0], currentBranchScope, true);
   }, [data, currentBranchScope]);
 
   // Archive count per person
-  const archiveCountByPerson = React.useMemo(() => {
+  const archiveCountByPerson = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const doc of archives) {
       for (const pId of doc.linkedPersonIds) {
@@ -291,9 +326,15 @@ export default function App() {
       individuals: { ...data.individuals, [updated.id]: updated },
     };
     setData(nextData);
-    
+    setVersionedItem(STORAGE_KEYS.TREE, nextData);
+
     // Broadcast via WebSocket
     realtimeClient.sendAction('person:edit', updated);
+
+    // File d'attente si hors ligne
+    if (!isWsConnected) {
+      addPendingChange('person:edit', updated);
+    }
 
     // Persist to Firestore if user is authenticated or room is active
     try {
@@ -307,7 +348,9 @@ export default function App() {
   };
 
   const handleAddArchive = async (newDoc: ArchiveDocument) => {
-    setArchives(prev => [newDoc, ...prev]);
+    const nextArchives = [newDoc, ...archives];
+    setArchives(nextArchives);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', newDoc);
 
     try {
@@ -321,7 +364,9 @@ export default function App() {
   };
 
   const handleUpdateArchive = async (updated: ArchiveDocument) => {
-    setArchives(prev => prev.map(a => a.id === updated.id ? updated : a));
+    const nextArchives = archives.map(a => a.id === updated.id ? updated : a);
+    setArchives(nextArchives);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', updated);
 
     try {
@@ -335,10 +380,12 @@ export default function App() {
   };
 
   const handleDeleteArchive = async (id: string) => {
-    setArchives(prev => prev.filter(a => a.id !== id));
+    const nextArchives = archives.filter(a => a.id !== id);
+    setArchives(nextArchives);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     
     try {
-      await deleteArchiveFromFirestore(roomId, id);
+      await deleteArchiveFromFirestore(roomId, id, currentUser);
     } catch (e) {
       console.warn('Firestore delete fallback', e);
     }
@@ -348,6 +395,7 @@ export default function App() {
 
   const handleLoadGedcom = async (newData: GenealogyData) => {
     setData(newData);
+    setVersionedItem(STORAGE_KEYS.TREE, newData);
     if (newData.rootPersonId) setSelectedPersonId(newData.rootPersonId);
     realtimeClient.sendAction('tree:update', newData);
 
@@ -361,9 +409,33 @@ export default function App() {
     showToast('Nouvel arbre GEDCOM chargé et synchronisé.');
   };
 
+  const handleRestoreBackup = async (payload: { genealogy: GenealogyData; archives: ArchiveDocument[]; accessList: BranchAccess[] }) => {
+    setData(payload.genealogy);
+    setArchives(payload.archives);
+    setAccessList(payload.accessList);
+
+    setVersionedItem(STORAGE_KEYS.TREE, payload.genealogy);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, payload.archives);
+    setVersionedItem(STORAGE_KEYS.ACCESS, payload.accessList);
+
+    if (payload.genealogy.rootPersonId) {
+      setSelectedPersonId(payload.genealogy.rootPersonId);
+    }
+
+    realtimeClient.sendAction('tree:update', payload.genealogy);
+
+    try {
+      await saveTreeToFirestore(roomId, payload.genealogy, currentUser);
+      setIsCloudSynced(true);
+    } catch (e) {}
+
+    showToast('Sauvegarde complète restaurée avec succès.');
+  };
+
   const handleResetSample = async () => {
     const sample = getSampleGenealogy();
     setData(sample);
+    setVersionedItem(STORAGE_KEYS.TREE, sample);
     setSelectedPersonId(sample.rootPersonId || Object.keys(sample.individuals)[0]);
     realtimeClient.sendAction('tree:update', sample);
 
@@ -375,9 +447,11 @@ export default function App() {
   };
 
   const handleAddAccessRule = async (newAcc: BranchAccess) => {
-    setAccessList(prev => [newAcc, ...prev]);
+    const next = [newAcc, ...accessList];
+    setAccessList(next);
+    setVersionedItem(STORAGE_KEYS.ACCESS, next);
     try {
-      await saveAccessToFirestore(roomId, newAcc);
+      await saveAccessToFirestore(roomId, newAcc, currentUser);
     } catch (e) {}
     showToast(`Lien pour ${newAcc.name} créé.`);
   };
@@ -415,6 +489,24 @@ export default function App() {
         onLogout={handleLogout}
         isCloudSynced={isCloudSynced}
       />
+
+      {/* Anomalies alert bar if any detected */}
+      {anomalies.length > 0 && activeTab === 'tree' && (
+        <div className="bg-amber-50 border-b border-amber-200/80 px-4 md:px-8 py-2 text-xs text-amber-900 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-800 shrink-0" />
+            <span>
+              <strong>Contrôle de cohérence :</strong> {anomalies.length} anomalie(s) chronologique(s) détectée(s) (ex : {anomalies[0].message}).
+            </span>
+          </div>
+          <button
+            onClick={() => setActiveTab('stats')}
+            className="font-bold underline hover:text-amber-950 shrink-0"
+          >
+            Examiner dans les statistiques →
+          </button>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 pb-16">
@@ -489,14 +581,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating utility quick actions button for GEDCOM import/export */}
-      <div className="fixed bottom-4 right-4 z-30">
+      {/* Floating utility quick actions button for GEDCOM & Duplicates */}
+      <div className="fixed bottom-4 right-4 z-30 flex items-center gap-2">
+        <button
+          onClick={() => setIsMergeModalOpen(true)}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-stone-800 bg-white/95 border border-stone-300 shadow-md hover:bg-stone-50 transition-all backdrop-blur-xs"
+        >
+          <GitMerge className="w-3.5 h-3.5 text-amber-800" />
+          <span>Fusionner les doublons</span>
+        </button>
+
         <button
           onClick={() => setIsExportModalOpen(true)}
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-stone-800 bg-white/95 border border-stone-300 shadow-md hover:bg-stone-50 transition-all backdrop-blur-xs"
         >
           <Database className="w-3.5 h-3.5 text-amber-800" />
-          <span>Fichiers & GEDCOM</span>
+          <span>Fichiers & Sauvegardes</span>
         </button>
       </div>
 
@@ -517,20 +617,40 @@ export default function App() {
         accessList={accessList}
         onAddAccess={handleAddAccessRule}
         onDeleteAccess={(id) => {
-          setAccessList(prev => prev.filter(a => a.id !== id));
+          const next = accessList.filter(a => a.id !== id);
+          setAccessList(next);
+          setVersionedItem(STORAGE_KEYS.ACCESS, next);
           showToast('Lien d\'accès révoqué.');
         }}
         rootPersonId={data.rootPersonId || Object.keys(data.individuals)[0]}
       />
 
-      {/* Export / Import GEDCOM Modal */}
+      {/* Export / Import GEDCOM & Backup Modal */}
       <ExportImportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         data={data}
         archives={archives}
+        accessList={accessList}
         onLoadGedcom={handleLoadGedcom}
+        onRestoreBackup={handleRestoreBackup}
         onResetSample={handleResetSample}
+      />
+
+      {/* Merge Duplicates Modal */}
+      <MergeModal
+        isOpen={isMergeModalOpen}
+        onClose={() => setIsMergeModalOpen(false)}
+        data={data}
+        onMergeComplete={(newData) => {
+          setData(newData);
+          setVersionedItem(STORAGE_KEYS.TREE, newData);
+          realtimeClient.sendAction('tree:update', newData);
+          try {
+            saveTreeToFirestore(roomId, newData, currentUser);
+          } catch (e) {}
+          showToast('Doublons fusionnés avec succès sans perte de données.');
+        }}
       />
 
       {/* Edit Person Modal */}

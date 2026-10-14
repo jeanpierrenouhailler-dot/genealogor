@@ -1,4 +1,4 @@
-import { GenealogyData, Individual, Family, LifeEvent, ParsedDate, Sex } from '../types/genealogy';
+import { GenealogyData, Individual, Family, LifeEvent, ParsedDate, Sex, GenealogicalSource } from '../types/genealogy';
 
 const MONTH_MAP: Record<string, number> = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -31,7 +31,7 @@ export function parseGedcomDate(rawDate?: string): ParsedDate | undefined {
     }
   }
 
-  // Match day (1 or 2 digits not matching the 4-digit year)
+  // Match day
   const dayMatch = upper.match(/\b([0-2]?\d|3[01])\b/);
   const day = dayMatch && (!year || parseInt(dayMatch[1], 10) !== year) ? parseInt(dayMatch[1], 10) : undefined;
 
@@ -44,7 +44,7 @@ export function parseGedcomDate(rawDate?: string): ParsedDate | undefined {
     isBefore,
     isAfter,
     isBetween,
-    year2
+    year2,
   };
 }
 
@@ -52,17 +52,19 @@ export function parseGedcom(content: string): GenealogyData {
   const lines = content.split(/\r?\n/);
   const individuals: Record<string, Individual> = {};
   const families: Record<string, Family> = {};
+  const sources: Record<string, GenealogicalSource> = {};
   let sourceHeader = '';
 
   let currentIndi: Partial<Individual> | null = null;
   let currentFam: Partial<Family> | null = null;
+  let currentSource: Partial<GenealogicalSource> | null = null;
   let currentEvent: { target: 'birth' | 'death' | 'baptism' | 'burial' | 'marriage' | 'divorce' | 'residence'; event: LifeEvent } | null = null;
+  let lastTextContainer: { get: () => string; set: (val: string) => void } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Line format: <level> [<pointer>] <tag> [<value>]
     const tokens = line.split(' ');
     const level = parseInt(tokens[0], 10);
     if (isNaN(level)) continue;
@@ -80,6 +82,16 @@ export function parseGedcom(content: string): GenealogyData {
       value = tokens.slice(2).join(' ');
     }
 
+    // Support multiline CONC / CONT
+    if (tag === 'CONC' && lastTextContainer) {
+      lastTextContainer.set(lastTextContainer.get() + value);
+      continue;
+    }
+    if (tag === 'CONT' && lastTextContainer) {
+      lastTextContainer.set(lastTextContainer.get() + '\n' + value);
+      continue;
+    }
+
     if (level === 0) {
       // Save current entity before starting new level 0
       if (currentIndi && currentIndi.id) {
@@ -90,7 +102,12 @@ export function parseGedcom(content: string): GenealogyData {
         families[currentFam.id] = finalizeFamily(currentFam);
         currentFam = null;
       }
+      if (currentSource && currentSource.id) {
+        sources[currentSource.id] = finalizeSource(currentSource);
+        currentSource = null;
+      }
       currentEvent = null;
+      lastTextContainer = null;
 
       if (tag === 'INDI') {
         currentIndi = {
@@ -102,11 +119,19 @@ export function parseGedcom(content: string): GenealogyData {
           occupations: [],
           residences: [],
           notes: [],
+          _unsupportedTags: [],
         };
       } else if (tag === 'FAM') {
         currentFam = {
           id: pointer,
           childrenIds: [],
+          notes: [],
+          _unsupportedTags: [],
+        };
+      } else if (tag === 'SOUR' && pointer) {
+        currentSource = {
+          id: pointer,
+          title: value || 'Source sans titre',
           notes: [],
         };
       } else if (tag === 'HEAD') {
@@ -115,10 +140,29 @@ export function parseGedcom(content: string): GenealogyData {
       continue;
     }
 
+    // Inside SOUR (level 0 record)
+    if (currentSource) {
+      if (level === 1) {
+        if (tag === 'TITL') currentSource.title = value;
+        else if (tag === 'AUTH') currentSource.author = value;
+        else if (tag === 'PUBL') currentSource.publication = value;
+        else if (tag === 'NOTE') {
+          currentSource.notes?.push(value);
+          const idx = (currentSource.notes?.length || 1) - 1;
+          lastTextContainer = {
+            get: () => currentSource!.notes![idx],
+            set: (v) => { currentSource!.notes![idx] = v; }
+          };
+        }
+      }
+      continue;
+    }
+
     // Inside INDI
     if (currentIndi) {
       if (level === 1) {
         currentEvent = null;
+        lastTextContainer = null;
         switch (tag) {
           case 'NAME': {
             currentIndi.name = value.replace(/\//g, '').trim();
@@ -160,11 +204,12 @@ export function parseGedcom(content: string): GenealogyData {
           case 'OCCU':
             if (value) currentIndi.occupations?.push(value.trim());
             break;
-          case 'RESI':
+          case 'RESI': {
             const resEvent: LifeEvent = {};
             currentIndi.residences?.push(resEvent);
             currentEvent = { target: 'residence', event: resEvent };
             break;
+          }
           case 'FAMS':
             if (value) currentIndi.familiesAsSpouse?.push(value.trim());
             break;
@@ -172,7 +217,18 @@ export function parseGedcom(content: string): GenealogyData {
             if (value) currentIndi.familiesAsChild?.push(value.trim());
             break;
           case 'NOTE':
-            if (value) currentIndi.notes?.push(value.trim());
+            if (value) {
+              currentIndi.notes?.push(value.trim());
+              const idx = (currentIndi.notes?.length || 1) - 1;
+              lastTextContainer = {
+                get: () => currentIndi!.notes![idx],
+                set: (v) => { currentIndi!.notes![idx] = v; }
+              };
+            }
+            break;
+          default:
+            // Preserve unsupported tags without silent data loss
+            currentIndi._unsupportedTags?.push({ tag, value, level });
             break;
         }
       } else if (level === 2 && currentEvent) {
@@ -184,6 +240,14 @@ export function parseGedcom(content: string): GenealogyData {
         } else if (tag === 'NOTE') {
           if (!currentEvent.event.notes) currentEvent.event.notes = [];
           currentEvent.event.notes.push(value.trim());
+          const idx = currentEvent.event.notes.length - 1;
+          lastTextContainer = {
+            get: () => currentEvent!.event.notes![idx],
+            set: (v) => { currentEvent!.event.notes![idx] = v; }
+          };
+        } else if (tag === 'SOUR') {
+          if (!currentEvent.event.citations) currentEvent.event.citations = [];
+          currentEvent.event.citations.push({ sourceId: value.trim() });
         }
       }
       continue;
@@ -193,6 +257,7 @@ export function parseGedcom(content: string): GenealogyData {
     if (currentFam) {
       if (level === 1) {
         currentEvent = null;
+        lastTextContainer = null;
         switch (tag) {
           case 'HUSB':
             currentFam.husbandId = value.trim();
@@ -212,7 +277,17 @@ export function parseGedcom(content: string): GenealogyData {
             currentEvent = { target: 'divorce', event: currentFam.divorce };
             break;
           case 'NOTE':
-            if (value) currentFam.notes?.push(value.trim());
+            if (value) {
+              currentFam.notes?.push(value.trim());
+              const idx = (currentFam.notes?.length || 1) - 1;
+              lastTextContainer = {
+                get: () => currentFam!.notes![idx],
+                set: (v) => { currentFam!.notes![idx] = v; }
+              };
+            }
+            break;
+          default:
+            currentFam._unsupportedTags?.push({ tag, value, level });
             break;
         }
       } else if (level === 2 && currentEvent) {
@@ -233,8 +308,10 @@ export function parseGedcom(content: string): GenealogyData {
   if (currentFam && currentFam.id) {
     families[currentFam.id] = finalizeFamily(currentFam);
   }
+  if (currentSource && currentSource.id) {
+    sources[currentSource.id] = finalizeSource(currentSource);
+  }
 
-  // Determine root person (first person with Sosa 1 or first in list)
   const indiKeys = Object.keys(individuals);
   let rootPersonId = indiKeys[0];
   for (const id of indiKeys) {
@@ -247,6 +324,7 @@ export function parseGedcom(content: string): GenealogyData {
   return {
     individuals,
     families,
+    sources,
     rootPersonId,
     sourceHeader,
   };
@@ -269,6 +347,7 @@ function finalizeIndividual(partial: Partial<Individual>): Individual {
     notes: partial.notes || [],
     familiesAsSpouse: partial.familiesAsSpouse || [],
     familiesAsChild: partial.familiesAsChild || [],
+    _unsupportedTags: partial._unsupportedTags || [],
   };
 }
 
@@ -280,6 +359,20 @@ function finalizeFamily(partial: Partial<Family>): Family {
     childrenIds: partial.childrenIds || [],
     marriage: partial.marriage,
     divorce: partial.divorce,
+    notes: partial.notes || [],
+    _unsupportedTags: partial._unsupportedTags || [],
+  };
+}
+
+function finalizeSource(partial: Partial<GenealogicalSource>): GenealogicalSource {
+  return {
+    id: partial.id || `@S${Math.random().toString(36).substring(2, 7)}@`,
+    title: partial.title || 'Source sans titre',
+    author: partial.author,
+    publication: partial.publication,
+    repository: partial.repository,
+    callNumber: partial.callNumber,
+    url: partial.url,
     notes: partial.notes || [],
   };
 }

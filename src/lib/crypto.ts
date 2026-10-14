@@ -1,19 +1,99 @@
 /**
- * Cryptographie sécurisée basée sur l'API Web Crypto native du navigateur.
- * Chiffrement AES-GCM 256-bit avec clé dérivée par PBKDF2 (100 000 itérations).
+ * Module cryptographique durci conforme aux spécifications de sécurité.
+ * - AES-GCM 256 bits avec IV aléatoire de 12 octets par opération.
+ * - PBKDF2 (SHA-256, 100 000 itérations) avec sel aléatoire de 16 octets par dérivation.
+ * - Format versionné (v2) encapsulant sel, IV et données chiffrées avec rétrocompatibilité v1.
+ * - Hachage et vérification de mots de passe par PBKDF2 avec sel aléatoire (format `pbkdf2:v2:salt:hash`).
  */
 
-const SALT = new TextEncoder().encode('Genealogor-Family-Tree-Salt-v2');
+const CURRENT_FORMAT_VERSION = 'v2';
 
+/**
+ * Hache un mot de passe avec un sel aléatoire de 16 octets et PBKDF2 (100 000 itérations).
+ * Renvoie une chaîne au format `pbkdf2:v2:<saltHex>:<hashHex>`.
+ */
 export async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + '-salt-genealogor');
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+
+  const hashBuffer = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return `pbkdf2:v2:${saltHex}:${hashHex}`;
 }
 
-export async function deriveKey(password: string): Promise<CryptoKey> {
+/**
+ * Vérifie un mot de passe par rapport au hachage stocké (gère le format v2 avec sel aléatoire et le format hérité v1).
+ */
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  if (!password || !storedHash) return false;
+
+  // Format sécurisé v2 : `pbkdf2:v2:<saltHex>:<hashHex>`
+  if (storedHash.startsWith('pbkdf2:v2:')) {
+    const parts = storedHash.split(':');
+    if (parts.length !== 4) return false;
+    const saltHex = parts[2];
+    const expectedHashHex = parts[3];
+
+    const salt = new Uint8Array(saltHex.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []);
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+
+    const hashBuffer = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt,
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256
+    );
+
+    const calculatedHashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return calculatedHashHex === expectedHashHex;
+  }
+
+  // Rétrocompatibilité avec l'ancien hachage SHA-256 statique v1
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + '-salt-genealogor');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const legacyHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (legacyHash === storedHash) return true;
+  } catch (e) {}
+
+  return false;
+}
+
+/**
+ * Dérive une clé AES-GCM 256 bits à partir d'un mot de passe et d'un sel spécifique.
+ */
+export async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -26,9 +106,9 @@ export async function deriveKey(password: string): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: SALT,
+      salt: salt as unknown as BufferSource,
       iterations: 100000,
-      hash: 'SHA-256'
+      hash: 'SHA-256',
     },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
@@ -37,9 +117,15 @@ export async function deriveKey(password: string): Promise<CryptoKey> {
   );
 }
 
+/**
+ * Chiffre des données avec AES-GCM 256 bits.
+ * Chaque opération génère un NOUVEAU sel de 16 octets et un NOUVEAU vecteur d'initialisation (IV) de 12 octets.
+ * Sortie au format versionné : `v2:<base64(salt + iv + ciphertext)>`.
+ */
 export async function encryptData(plaintext: string, password: string): Promise<string> {
-  const key = await deriveKey(password);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
   const encoded = new TextEncoder().encode(plaintext);
 
   const ciphertext = await crypto.subtle.encrypt(
@@ -48,34 +134,78 @@ export async function encryptData(plaintext: string, password: string): Promise<
     encoded
   );
 
-  // Combiner IV + Ciphertext et encoder en base64
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.length);
+  // Assemblage binaire : [16 octets salt | 12 octets iv | ciphertext...]
+  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
 
-  return btoa(String.fromCharCode(...combined));
-}
-
-export async function decryptData(encryptedBase64: string, password: string): Promise<string> {
-  const key = await deriveKey(password);
-  const binaryString = atob(encryptedBase64);
-  const combined = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    combined[i] = binaryString.charCodeAt(i);
+  let binary = '';
+  for (let i = 0; i < combined.length; i++) {
+    binary += String.fromCharCode(combined[i]);
   }
 
-  const iv = combined.slice(0, 12);
-  const ciphertext = combined.slice(12);
-
-  const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    ciphertext
-  );
-
-  return new TextDecoder().decode(decrypted);
+  return `${CURRENT_FORMAT_VERSION}:${btoa(binary)}`;
 }
 
+/**
+ * Déchiffre les données en vérifiant l'intégrité du tag AES-GCM et le format versionné.
+ */
+export async function decryptData(encryptedPayload: string, password: string): Promise<string> {
+  if (!encryptedPayload) throw new Error('Donnée chiffrée vide');
+
+  // Format versionné v2
+  if (encryptedPayload.startsWith('v2:')) {
+    const base64Data = encryptedPayload.slice(3);
+    const binary = atob(base64Data);
+    const combined = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      combined[i] = binary.charCodeAt(i);
+    }
+
+    if (combined.length < 28) {
+      throw new Error('Payload chiffré trop court ou corrompu');
+    }
+
+    const salt = combined.slice(0, 16);
+    const iv = combined.slice(16, 28);
+    const ciphertext = combined.slice(28);
+
+    const key = await deriveKey(password, salt);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    );
+
+    return new TextDecoder().decode(decrypted);
+  }
+
+  // Rétrocompatibilité avec le format v1 (salt constant, [12 octets iv | ciphertext])
+  try {
+    const legacySalt = new TextEncoder().encode('Genealogor-Family-Tree-Salt-v2');
+    const binary = atob(encryptedPayload);
+    const combined = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      combined[i] = binary.charCodeAt(i);
+    }
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const key = await deriveKey(password, legacySalt);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    );
+    return new TextDecoder().decode(decrypted);
+  } catch (e) {
+    throw new Error('Échec du déchiffrement : mot de passe incorrect ou données altérées.');
+  }
+}
+
+/**
+ * Génère un jeton aléatoire cryptographiquement sécurisé de 32 caractères hexadécimaux.
+ */
 export function generateShareToken(): string {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);

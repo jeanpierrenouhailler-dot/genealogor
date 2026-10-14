@@ -11,103 +11,211 @@ const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
 
-// In-memory Room WebSocket manager for real-time zero-knowledge P2P relay
 interface ClientInfo {
   ws: WebSocket;
   clientId: string;
   roomId: string;
   userName?: string;
   branch?: string;
+  isAlive: boolean;
+  messageCount: number;
+  rateLimitWindow: number;
 }
 
 const clients = new Map<WebSocket, ClientInfo>();
 const rooms = new Map<string, Set<WebSocket>>();
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB max payload
+const RATE_LIMIT_MAX_MSG = 60; // Max 60 messages per 10 seconds
+const RATE_LIMIT_WINDOW_MS = 10000;
+
+function isValidId(id: unknown): boolean {
+  return typeof id === 'string' && id.length > 0 && id.length <= 128 && /^[a-zA-Z0-9_\-]+$/.test(id);
+}
+
+function sanitizeText(str: unknown, maxLen = 100): string {
+  if (typeof str !== 'string') return '';
+  return str.slice(0, maxLen).replace(/[<>]/g, '');
+}
+
+const wss = new WebSocketServer({ 
+  server, 
+  path: '/ws',
+  maxPayload: MAX_PAYLOAD_BYTES
+});
+
+// Periodic ping/pong to clean up dead connections
+const heartbeatInterval = setInterval(() => {
+  for (const [ws, info] of clients.entries()) {
+    if (!info.isAlive) {
+      removeClient(ws);
+      ws.terminate();
+      continue;
+    }
+    info.isAlive = false;
+    ws.ping();
+  }
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(heartbeatInterval);
+});
+
+function removeClient(ws: WebSocket) {
+  const info = clients.get(ws);
+  if (!info) return;
+
+  const { roomId, clientId, userName } = info;
+  const roomSet = rooms.get(roomId);
+  if (roomSet) {
+    roomSet.delete(ws);
+    if (roomSet.size === 0) {
+      rooms.delete(roomId);
+    } else {
+      broadcastToRoom(roomId, ws, {
+        type: 'peer:left',
+        clientId,
+        userName,
+        peerCount: roomSet.size,
+        timestamp: Date.now(),
+      });
+    }
+  }
+  clients.delete(ws);
+}
 
 wss.on('connection', (ws) => {
-  ws.on('message', (data: string) => {
+  const initialInfo: ClientInfo = {
+    ws,
+    clientId: '',
+    roomId: '',
+    isAlive: true,
+    messageCount: 0,
+    rateLimitWindow: Date.now(),
+  };
+  clients.set(ws, initialInfo);
+
+  ws.on('pong', () => {
+    const info = clients.get(ws);
+    if (info) info.isAlive = true;
+  });
+
+  ws.on('message', (rawData: Buffer | string) => {
+    const info = clients.get(ws);
+    if (!info) return;
+
+    // Rate limiting check
+    const now = Date.now();
+    if (now - info.rateLimitWindow > RATE_LIMIT_WINDOW_MS) {
+      info.rateLimitWindow = now;
+      info.messageCount = 0;
+    }
+    info.messageCount++;
+    if (info.messageCount > RATE_LIMIT_MAX_MSG) {
+      ws.send(JSON.stringify({ type: 'error', code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests' }));
+      return;
+    }
+
     try {
-      const msg = JSON.parse(data.toString());
+      const dataStr = rawData.toString();
+      if (dataStr.length > MAX_PAYLOAD_BYTES) {
+        ws.send(JSON.stringify({ type: 'error', code: 'PAYLOAD_TOO_LARGE', message: 'Payload exceeds 512KB' }));
+        return;
+      }
+
+      const msg = JSON.parse(dataStr);
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
+        ws.send(JSON.stringify({ type: 'error', code: 'INVALID_FORMAT', message: 'Invalid message structure' }));
+        return;
+      }
 
       if (msg.type === 'join') {
-        const { roomId, clientId, userName, branch } = msg;
-        const info: ClientInfo = { ws, clientId, roomId, userName, branch };
-        clients.set(ws, info);
+        const { roomId, clientId, userName, branch, roomToken } = msg;
+
+        if (!isValidId(roomId) || !isValidId(clientId)) {
+          ws.send(JSON.stringify({ type: 'error', code: 'INVALID_ID', message: 'Invalid roomId or clientId format' }));
+          return;
+        }
+
+        // Leave existing room if any
+        if (info.roomId && info.roomId !== roomId) {
+          removeClient(ws);
+        }
+
+        info.roomId = roomId;
+        info.clientId = clientId;
+        info.userName = sanitizeText(userName, 50) || 'Visiteur';
+        info.branch = sanitizeText(branch, 20) || 'all';
 
         if (!rooms.has(roomId)) {
           rooms.set(roomId, new Set());
         }
         rooms.get(roomId)!.add(ws);
 
-        // Notify other room members
+        // Broadcast to other authorized peers in the room
         broadcastToRoom(roomId, ws, {
           type: 'peer:joined',
-          clientId,
-          userName,
-          branch,
+          clientId: info.clientId,
+          userName: info.userName,
+          branch: info.branch,
           peerCount: rooms.get(roomId)!.size,
           timestamp: Date.now(),
         });
 
-        // Send current room info back to joined peer
+        // Send confirmation back to joined peer
         ws.send(JSON.stringify({
           type: 'room:info',
           roomId,
           peerCount: rooms.get(roomId)!.size,
         }));
+
       } else if (msg.type === 'sync:action') {
-        const info = clients.get(ws);
-        if (info && info.roomId) {
-          broadcastToRoom(info.roomId, ws, {
-            type: 'sync:action',
-            clientId: info.clientId,
-            action: msg.action,
-            payload: msg.payload, // Encrypted payload
-            timestamp: Date.now(),
-          });
+        // Enforce that client has legitimately joined the room
+        if (!info.roomId || !rooms.has(info.roomId) || !rooms.get(info.roomId)!.has(ws)) {
+          ws.send(JSON.stringify({ type: 'error', code: 'NOT_IN_ROOM', message: 'Must join room before sending actions' }));
+          return;
         }
+
+        const allowedActions = ['tree:update', 'person:edit', 'archive:add', 'archive:delete', 'access:update'];
+        if (!allowedActions.includes(msg.action)) {
+          ws.send(JSON.stringify({ type: 'error', code: 'UNAUTHORIZED_ACTION', message: 'Action not permitted' }));
+          return;
+        }
+
+        // Relay action to peers in the same room
+        broadcastToRoom(info.roomId, ws, {
+          type: 'sync:action',
+          clientId: info.clientId,
+          action: msg.action,
+          payload: msg.payload,
+          timestamp: Date.now(),
+        });
+
       } else if (msg.type === 'presence:ping') {
-        const info = clients.get(ws);
-        if (info && info.roomId) {
-          broadcastToRoom(info.roomId, ws, {
-            type: 'presence:update',
-            clientId: info.clientId,
-            userName: info.userName,
-            cursor: msg.cursor,
-            activeView: msg.activeView,
-            activePersonId: msg.activePersonId,
-          });
-        }
+        if (!info.roomId || !rooms.has(info.roomId)) return;
+
+        broadcastToRoom(info.roomId, ws, {
+          type: 'presence:update',
+          clientId: info.clientId,
+          userName: info.userName,
+          cursor: typeof msg.cursor === 'object' ? msg.cursor : undefined,
+          activeView: sanitizeText(msg.activeView, 30),
+          activePersonId: isValidId(msg.activePersonId) ? msg.activePersonId : undefined,
+        });
+
+      } else {
+        ws.send(JSON.stringify({ type: 'error', code: 'UNKNOWN_TYPE', message: 'Unknown message type' }));
       }
+
     } catch (e) {
-      console.error('Error parsing WebSocket message', e);
+      ws.send(JSON.stringify({ type: 'error', code: 'MALFORMED_JSON', message: 'JSON parsing failed' }));
     }
   });
 
   ws.on('close', () => {
-    const info = clients.get(ws);
-    if (info) {
-      const { roomId, clientId, userName } = info;
-      const roomSet = rooms.get(roomId);
-      if (roomSet) {
-        roomSet.delete(ws);
-        if (roomSet.size === 0) {
-          rooms.delete(roomId);
-        } else {
-          broadcastToRoom(roomId, ws, {
-            type: 'peer:left',
-            clientId,
-            userName,
-            peerCount: roomSet.size,
-            timestamp: Date.now(),
-          });
-        }
-      }
-      clients.delete(ws);
-    }
+    removeClient(ws);
   });
 });
 
@@ -122,9 +230,9 @@ function broadcastToRoom(roomId: string, sender: WebSocket, payload: any) {
   }
 }
 
-// Healthcheck & WebSocket room status endpoint
+// Healthcheck & WebSocket room status endpoint (without exposing private room ids)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', activeRooms: rooms.size, totalClients: clients.size });
+  res.json({ status: 'ok', activeRoomsCount: rooms.size, totalClientsCount: clients.size });
 });
 
 // Configure Vite middleware in development or static serving in production
@@ -146,7 +254,7 @@ async function startServer() {
   }
 
   server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running securely on port ${PORT}`);
   });
 }
 

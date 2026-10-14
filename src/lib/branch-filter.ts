@@ -1,4 +1,7 @@
 import { GenealogyData, Individual, BranchScope } from '../types/genealogy';
+import { shouldProtectPerson, sanitizePersonForPrivacy, isLiving, DEFAULT_PRIVACY_POLICY } from './privacy';
+
+export { isLiving };
 
 export function getBranchIndividuals(
   data: GenealogyData,
@@ -69,18 +72,6 @@ export function getBranchIndividuals(
   return allowed;
 }
 
-export function isLiving(person: Individual): boolean {
-  if (person.death && (person.death.date || person.death.place)) {
-    return false;
-  }
-  const currentYear = new Date().getFullYear();
-  if (person.birth?.parsedDate?.year) {
-    return currentYear - person.birth.parsedDate.year < 100;
-  }
-  // Without birth year and without death, check generation or assume living if recent
-  return false;
-}
-
 export function filterGenealogyData(
   data: GenealogyData,
   rootPersonId: string,
@@ -88,21 +79,14 @@ export function filterGenealogyData(
   hideLiving: boolean
 ): GenealogyData {
   const allowedIds = getBranchIndividuals(data, rootPersonId, scope);
+  const privacyPolicy = { ...DEFAULT_PRIVACY_POLICY, hideLiving, hideUnknown: hideLiving };
 
   const filteredIndividuals: Record<string, Individual> = {};
   for (const [id, ind] of Object.entries(data.individuals)) {
     if (!allowedIds.has(id)) continue;
 
-    if (hideLiving && isLiving(ind)) {
-      // Redact sensitive details of living individuals for guest/branch link
-      filteredIndividuals[id] = {
-        ...ind,
-        name: `${ind.surname || ''} (Vivant - Masqué)`.trim(),
-        givenName: 'Confidentiel',
-        birth: ind.birth?.parsedDate?.year ? { parsedDate: { raw: `${ind.birth.parsedDate.year}`, year: ind.birth.parsedDate.year } } : undefined,
-        notes: ['Données masquées pour préserver la vie privée des personnes vivantes.'],
-        residences: [],
-      };
+    if (hideLiving && shouldProtectPerson(ind, privacyPolicy, data)) {
+      filteredIndividuals[id] = sanitizePersonForPrivacy(ind, privacyPolicy, data);
     } else {
       filteredIndividuals[id] = ind;
     }

@@ -1,12 +1,34 @@
 import { GenealogyData, Individual, Family } from '../types/genealogy';
+import { shouldProtectPerson, sanitizePersonForPrivacy } from './privacy';
 
-export function serializeGedcom(data: GenealogyData): string {
+export interface GedcomExportOptions {
+  hideLiving?: boolean;
+}
+
+export interface GedcomExportResult {
+  gedcom: string;
+  report: {
+    totalIndividuals: number;
+    totalFamilies: number;
+    maskedLivingCount: number;
+    totalSources: number;
+  };
+}
+
+export function serializeGedcom(data: GenealogyData, options: GedcomExportOptions = {}): string {
+  const result = serializeGedcomWithReport(data, options);
+  return result.gedcom;
+}
+
+export function serializeGedcomWithReport(data: GenealogyData, options: GedcomExportOptions = {}): GedcomExportResult {
   const lines: string[] = [];
+  const hideLiving = options.hideLiving ?? false;
+  let maskedLivingCount = 0;
 
   // Header
   lines.push('0 HEAD');
   lines.push('1 SOUR Genealogor');
-  lines.push('2 VERS 2.0');
+  lines.push('2 VERS 2.0.0');
   lines.push('2 NAME Genealogor — Arbre Familial & Archives');
   lines.push('1 DATE ' + new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
   lines.push('1 GEDC');
@@ -14,15 +36,45 @@ export function serializeGedcom(data: GenealogyData): string {
   lines.push('2 FORM LINEAGE-LINKED');
   lines.push('1 CHAR UTF-8');
 
+  // Sources (Level 0)
+  const sources = data.sources || {};
+  for (const src of Object.values(sources)) {
+    lines.push(`0 ${src.id} SOUR`);
+    if (src.title) lines.push(`1 TITL ${src.title}`);
+    if (src.author) lines.push(`1 AUTH ${src.author}`);
+    if (src.publication) lines.push(`1 PUBL ${src.publication}`);
+    if (src.callNumber) lines.push(`1 CALN ${src.callNumber}`);
+    if (src.notes) {
+      for (const note of src.notes) {
+        lines.push(`1 NOTE ${note}`);
+      }
+    }
+  }
+
   // Individuals
-  for (const indi of Object.values(data.individuals)) {
+  const indList = Object.values(data.individuals);
+  for (const rawIndi of indList) {
+    let indi = rawIndi;
+    let isMasked = false;
+    if (hideLiving && shouldProtectPerson(rawIndi, undefined, data)) {
+      indi = sanitizePersonForPrivacy(rawIndi, undefined, data);
+      maskedLivingCount++;
+      isMasked = true;
+    }
+
     lines.push(`0 ${indi.id} INDI`);
-    const surnamePart = indi.surname ? `/${indi.surname}/` : '';
-    const givenPart = indi.givenName || '';
-    const nameLine = [givenPart, surnamePart].filter(Boolean).join(' ').trim() || indi.name || 'Inconnu';
-    lines.push(`1 NAME ${nameLine}`);
-    if (indi.givenName) lines.push(`2 GIVN ${indi.givenName}`);
-    if (indi.surname) lines.push(`2 SURN ${indi.surname}`);
+    if (isMasked) {
+      lines.push(`1 NAME ${indi.surname || ''} [Privé]`);
+      lines.push(`2 GIVN [Confidentiel]`);
+      if (indi.surname) lines.push(`2 SURN ${indi.surname}`);
+    } else {
+      const surnamePart = indi.surname ? `/${indi.surname}/` : '';
+      const givenPart = indi.givenName || '';
+      const nameLine = [givenPart, surnamePart].filter(Boolean).join(' ').trim() || indi.name || 'Inconnu';
+      lines.push(`1 NAME ${nameLine}`);
+      if (indi.givenName) lines.push(`2 GIVN ${indi.givenName}`);
+      if (indi.surname) lines.push(`2 SURN ${indi.surname}`);
+    }
     lines.push(`1 SEX ${indi.sex || 'X'}`);
 
     if (indi.birth) {
@@ -61,13 +113,24 @@ export function serializeGedcom(data: GenealogyData): string {
 
     if (indi.notes) {
       for (const note of indi.notes) {
-        lines.push(`1 NOTE ${note}`);
+        const noteLines = note.split('\n');
+        lines.push(`1 NOTE ${noteLines[0]}`);
+        for (let j = 1; j < noteLines.length; j++) {
+          lines.push(`2 CONT ${noteLines[j]}`);
+        }
+      }
+    }
+
+    if (indi._unsupportedTags) {
+      for (const t of indi._unsupportedTags) {
+        lines.push(`${t.level} ${t.tag} ${t.value}`);
       }
     }
   }
 
   // Families
-  for (const fam of Object.values(data.families)) {
+  const famList = Object.values(data.families);
+  for (const fam of famList) {
     lines.push(`0 ${fam.id} FAM`);
     if (fam.husbandId) lines.push(`1 HUSB ${fam.husbandId}`);
     if (fam.wifeId) lines.push(`1 WIFE ${fam.wifeId}`);
@@ -91,8 +154,23 @@ export function serializeGedcom(data: GenealogyData): string {
         lines.push(`1 NOTE ${note}`);
       }
     }
+
+    if (fam._unsupportedTags) {
+      for (const t of fam._unsupportedTags) {
+        lines.push(`${t.level} ${t.tag} ${t.value}`);
+      }
+    }
   }
 
   lines.push('0 TRLR');
-  return lines.join('\n');
+
+  return {
+    gedcom: lines.join('\n'),
+    report: {
+      totalIndividuals: indList.length,
+      totalFamilies: famList.length,
+      maskedLivingCount,
+      totalSources: Object.keys(sources).length,
+    },
+  };
 }

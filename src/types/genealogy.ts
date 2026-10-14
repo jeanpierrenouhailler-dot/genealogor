@@ -12,6 +12,15 @@ export interface ParsedDate {
   year2?: number;
 }
 
+export interface SourceCitation {
+  sourceId: string;
+  page?: string;
+  date?: string;
+  transcription?: string;
+  confidence?: 'certain' | 'probable' | 'uncertain' | 'contradictory';
+  notes?: string;
+}
+
 export interface LifeEvent {
   date?: string;
   place?: string;
@@ -19,6 +28,7 @@ export interface LifeEvent {
   parsedDate?: ParsedDate;
   latitude?: number;
   longitude?: number;
+  citations?: SourceCitation[];
 }
 
 export interface Individual {
@@ -39,6 +49,8 @@ export interface Individual {
   sosaNumber?: number;
   dAbovilleNumber?: string;
   generation?: number;
+  citations?: SourceCitation[];
+  _unsupportedTags?: Array<{ tag: string; value: string; level: number }>;
 }
 
 export interface Family {
@@ -49,11 +61,25 @@ export interface Family {
   marriage?: LifeEvent;
   divorce?: LifeEvent;
   notes?: string[];
+  citations?: SourceCitation[];
+  _unsupportedTags?: Array<{ tag: string; value: string; level: number }>;
+}
+
+export interface GenealogicalSource {
+  id: string;
+  title: string;
+  author?: string;
+  publication?: string;
+  repository?: string;
+  callNumber?: string;
+  url?: string;
+  notes?: string[];
 }
 
 export interface GenealogyData {
   individuals: Record<string, Individual>;
   families: Record<string, Family>;
+  sources?: Record<string, GenealogicalSource>;
   rootPersonId?: string;
   sourceHeader?: string;
 }
@@ -124,4 +150,21 @@ export interface SyncMessage {
   action?: 'tree:update' | 'person:edit' | 'archive:add' | 'archive:delete' | 'access:update';
   payload?: any;
   timestamp?: number;
+}
+
+export interface ChronologicalAnomaly {
+  id: string;
+  personId: string;
+  personName: string;
+  severity: 'error' | 'warning';
+  code: 'DEATH_BEFORE_BIRTH' | 'PARENT_TOO_YOUNG' | 'PARENT_TOO_OLD' | 'MARRIAGE_BEFORE_BIRTH' | 'EVENT_AFTER_DEATH';
+  message: string;
+  verified?: boolean;
+}
+
+export interface DuplicateCandidate {
+  personA: Individual;
+  personB: Individual;
+  score: number; // 0 to 100
+  reasons: string[];
 }

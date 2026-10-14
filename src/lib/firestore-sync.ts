@@ -1,12 +1,11 @@
 import { 
   doc, 
   setDoc, 
-  getDoc, 
   collection, 
   onSnapshot, 
   deleteDoc 
 } from 'firebase/firestore';
-import { db, auth, OperationType, handleFirestoreError } from './firebase';
+import { db, OperationType, handleFirestoreError } from './firebase';
 import { GenealogyData, ArchiveDocument, BranchAccess } from '../types/genealogy';
 import { User } from 'firebase/auth';
 
@@ -15,13 +14,14 @@ export async function saveTreeToFirestore(
   data: GenealogyData, 
   currentUser: User | null
 ): Promise<void> {
+  if (!currentUser) return;
   const path = `trees/${treeId}`;
   try {
     const treeRef = doc(db, 'trees', treeId);
     await setDoc(treeRef, {
       treeId,
-      ownerId: currentUser?.uid || 'anonymous',
-      ownerEmail: currentUser?.email || '',
+      ownerId: currentUser.uid,
+      ownerEmail: currentUser.email || '',
       title: data.sourceHeader || 'Arbre Familial',
       rootPersonId: data.rootPersonId || '',
       individuals: data.individuals,
@@ -35,7 +35,8 @@ export async function saveTreeToFirestore(
 
 export function subscribeToTree(
   treeId: string, 
-  onUpdate: (data: GenealogyData) => void
+  onUpdate: (data: GenealogyData) => void,
+  onMissingDoc?: () => void
 ): () => void {
   const path = `trees/${treeId}`;
   const treeRef = doc(db, 'trees', treeId);
@@ -51,6 +52,8 @@ export function subscribeToTree(
           sourceHeader: val.title,
         });
       }
+    } else if (onMissingDoc) {
+      onMissingDoc();
     }
   }, (error) => {
     handleFirestoreError(error, OperationType.GET, path);
@@ -62,12 +65,13 @@ export async function saveArchiveToFirestore(
   archive: ArchiveDocument, 
   currentUser: User | null
 ): Promise<void> {
+  if (!currentUser) return;
   const path = `trees/${treeId}/archives/${archive.id}`;
   try {
     const archiveRef = doc(db, 'trees', treeId, 'archives', archive.id);
     await setDoc(archiveRef, {
       ...archive,
-      createdBy: currentUser?.uid || 'anonymous',
+      createdBy: currentUser.uid,
       updatedAt: Date.now(),
     }, { merge: true });
   } catch (error) {
@@ -77,8 +81,10 @@ export async function saveArchiveToFirestore(
 
 export async function deleteArchiveFromFirestore(
   treeId: string, 
-  archiveId: string
+  archiveId: string,
+  currentUser: User | null
 ): Promise<void> {
+  if (!currentUser) return;
   const path = `trees/${treeId}/archives/${archiveId}`;
   try {
     const archiveRef = doc(db, 'trees', treeId, 'archives', archiveId);
@@ -110,8 +116,10 @@ export function subscribeToArchives(
 
 export async function saveAccessToFirestore(
   treeId: string, 
-  access: BranchAccess
+  access: BranchAccess,
+  currentUser: User | null
 ): Promise<void> {
+  if (!currentUser) return;
   const path = `trees/${treeId}/access/${access.id}`;
   try {
     const ref = doc(db, 'trees', treeId, 'access', access.id);

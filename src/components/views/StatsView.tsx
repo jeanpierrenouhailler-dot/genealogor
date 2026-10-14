@@ -1,6 +1,7 @@
 import React from 'react';
-import { BarChart3, Users, Heart, TrendingUp, Award, Calendar, Clock } from 'lucide-react';
+import { BarChart3, Users, Heart, TrendingUp, Award, Calendar, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { GenealogyData } from '../../types/genealogy';
+import { validateChronology } from '../../lib/validation';
 
 interface StatsViewProps {
   data: GenealogyData;
@@ -10,6 +11,7 @@ interface StatsViewProps {
 export const StatsView: React.FC<StatsViewProps> = ({ data, archiveCount }) => {
   const individuals = Object.values(data.individuals);
   const families = Object.values(data.families);
+  const anomalies = validateChronology(data);
 
   const maleCount = individuals.filter(i => i.sex === 'M').length;
   const femaleCount = individuals.filter(i => i.sex === 'F').length;
@@ -73,10 +75,10 @@ export const StatsView: React.FC<StatsViewProps> = ({ data, archiveCount }) => {
           ANALYSE DÉMOGRAPHIQUE & GÉNÉALOGIQUE
         </span>
         <h1 className="font-serif text-3xl font-bold text-stone-900 mt-1">
-          Statistiques de l'Arbre Familial
+          Statistiques & Contrôle de Cohérence
         </h1>
         <p className="text-xs text-stone-600 mt-0.5">
-          Synthèse globale des patronymes, de la longévité et de la saisonnalité des naissances.
+          Synthèse globale des patronymes, de la longévité et de la cohérence chronologique de l'arbre.
         </p>
       </div>
 
@@ -171,6 +173,39 @@ export const StatsView: React.FC<StatsViewProps> = ({ data, archiveCount }) => {
           </div>
         </div>
 
+      </div>
+
+      {/* Audit de Cohérence Chronologique */}
+      <div className="bg-white p-6 rounded-2xl border border-stone-200/80 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-amber-800" />
+            <h3 className="font-serif text-base font-bold text-stone-900">
+              Contrôle de Cohérence Chronologique (P1 - Exigence 6.4)
+            </h3>
+          </div>
+          <span className="text-xs font-mono font-bold text-stone-500">
+            {anomalies.length === 0 ? '0 anomalie détectée' : `${anomalies.length} anomalie(s)`}
+          </span>
+        </div>
+
+        {anomalies.length === 0 ? (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-900">
+            <CheckCircle className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>Toutes les dates de naissance, mariage et décès de l'arbre sont cohérentes et respectent les lois de la biologie humaine.</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {anomalies.map(anom => (
+              <div key={anom.id} className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-950">
+                <AlertTriangle className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-bold">{anom.personName} :</span> <span>{anom.message}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>
