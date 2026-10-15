@@ -38,8 +38,9 @@ class RealtimeClient {
     if (typeof window === 'undefined') return;
 
     try {
+      const customWsUrl = (import.meta.env as any)?.VITE_WS_URL;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      const wsUrl = customWsUrl || `${protocol}//${window.location.host}/ws`;
 
       this.ws = new WebSocket(wsUrl);
 

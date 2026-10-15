@@ -196,13 +196,28 @@ npm test
 
 ---
 
-## 📄 Scripts Disponibles
+## 🌐 Déploiement sur Cloudflare
 
-- `npm run dev` : Démarre le serveur Express avec relais WebSocket et Vite sur le port 3000.
-- `npm run build` : Compile l'application pour la production (`dist/`).
-- `npm run start` : Lance l'application en mode production via `server.ts`.
-- `npm run test` : Exécute l'ensemble de la suite de tests automatisés avec Vitest.
-- `npm run lint` : Vérifie la validité du typage TypeScript (`tsc --noEmit`).
+Le dépôt est **entièrement compatible** pour un déploiement sur l'écosystème **Cloudflare**, avec deux configurations possibles :
+
+### Option 1 : Cloudflare Pages (Recommandé pour le Frontend — 100% prêt à l'emploi)
+L'application est une SPA (Single Page Application) statique avec compilation optimisée Vite. La base de données (Firebase Firestore), l'authentification, le chiffrement Web Crypto AES-GCM et le mode hors-ligne s'exécutent entièrement côté client.
+
+1. **Connecter le dépôt Git** dans le tableau de bord Cloudflare Pages (*Create a project > Connect to Git*).
+2. **Paramètres de build** :
+   - **Framework preset** : `Vite` (ou Aucun)
+   - **Build command** : `npm run build`
+   - **Build output directory** : `dist`
+   - **Node.js version** : `20` ou `22` (paramétrable via la variable `NODE_VERSION=20`)
+3. **Routage SPA** : Le fichier `public/_redirects` est déjà préconfiguré (`/* /index.html 200`) afin que tous les rechargements d'URL et deep-links fonctionnent sans erreur 404.
+4. **Relais Temps Réel & WebSocket** :
+   - Si aucun serveur WebSocket n'est configuré, l'application fonctionne parfaitement : Firestore assure la synchronisation temps réel des données (`onSnapshot`), et `BroadcastChannel` synchronise les onglets locaux.
+   - Si vous souhaitez activer le relais WebSocket de curseurs/présence, renseignez simplement la variable d'environnement `VITE_WS_URL=wss://votre-relais.com/ws` dans les paramètres Cloudflare Pages.
+
+### Option 2 : Hébergement Fullstack (Frontend + Relais WebSocket Node.js)
+Pour faire tourner simultanément le serveur `server.ts` (Express + WebSocket natif `ws`) :
+- Déploiement sur conteneur Node.js : **Docker / Cloud Run / Railway / Render / Fly.io / VPS**.
+- Ou déploiement du relais sur **Cloudflare Workers avec Durable Objects** pour un fonctionnement 100% serverless sur l'edge de Cloudflare.
 
 ---
 
