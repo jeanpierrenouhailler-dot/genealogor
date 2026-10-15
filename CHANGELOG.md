@@ -5,6 +5,23 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ---
 
+## [1.2.0] — 2026-10-15
+
+### 🌟 Ajouté
+- **Système Interactif de Marquage de Personnes sur Photos (Photo Tagging)** :
+  - **Repérage direct sur les photographies et scans** : Possibilité de cliquer sur n'importe quelle zone d'un cliché (visage, personne assise/debout) pour placer une étiquette interactive avec coordonnées relatives proportionnelles en pourcentage.
+  - **Liaison directe avec l'arbre familial** : Boîte de recherche instantanée pour rattacher le tag à n'importe quel individu de l'arbre généalogique avec indication de son sexe, patronyme et dates de vie.
+  - **Infobulles riches & interactives au survol** : Affichage d'une carte d'identité flottante présentant le nom complet, les dates de vie, le rôle ou la précision (ex : *« Assis au centre, 82 ans »*), et un bouton d'accès direct vers sa fiche.
+  - **Navigation instantanée vers la fiche ancêtre** : Un clic sur un repère photo ouvre immédiatement la fiche généalogique complète de la personne concernée.
+  - **Galerie des photographies identifiées dans la fiche individu (`ProfileView`)** :
+    - Nouvelle section dédiée présentant toutes les photographies d'époque où la personne a été marquée, avec vignette haute résolution, badge de positionnement visuel (`✓`) et rôle contextuel.
+    - Clic sur une photo depuis la fiche individuelle pour l'ouvrir immédiatement dans l'atelier archives (`ArchivesView`) centrée sur la photo avec les repères activés.
+  - **Typologie 'photo' & filtrage d'archives** : Intégration de la typologie *« Photographie / Portrait »* dans le catalogue et ajout d'un filtre rapide *« Photos »*.
+  - **Cliché de démonstration enrichi** : Ajout d'un portrait de famille d'époque (1912) avec repères interactifs préconfigurés sur Louis Martin, Henri Martin et Jeanne Martin.
+  - **Synchronisation automatique** : Les identifiants des personnes tagguées sont automatiquement répercutés dans `linkedPersonIds` et synchronisés en temps réel via Firestore et le relais local.
+
+---
+
 ## [1.1.0] — 2026-10-14
 
 ### 🌟 Ajouté

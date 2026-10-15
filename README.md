@@ -38,21 +38,26 @@ Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynami
   - **Carte Géographique** : Cartographie des migrations et dispersion géographique des ancêtres.
   - **Statistiques Généalogiques** : Âge moyen au mariage, longévité par siècle, répartition des naissances par saison et par patronyme.
 
-### 📜 2. Studio d'Archives Numérisées
-- **Importation de documents** : Prise en charge des photographies et scans d'actes (JPEG, PNG, WebP, PDF) par glisser-déposer.
-- **Typologie d'actes complète** :
+### 📜 2. Studio d'Archives & Marquage Photo Interactif (Photo Tagging)
+- **Marquage de personnes sur les photos (Photo Tagging)** :
+  - **Repères cliquables interactifs** : Cliquez sur n'importe quel visage ou personnage d'une photographie de famille ou scan d'archive pour créer un repère visuel précis.
+  - **Recherche & association en direct** : Sélection d'un ancêtre de l'arbre en quelques frappes avec affichage de ses dates et de son patronyme.
+  - **Infobulles au survol & lien direct** : Survoler un tag affiche l'identité de l'ancêtre, ses dates et son rôle sur la photo, avec un bouton vers sa fiche individuelle complète.
+  - **Section "Photographies & Portraits Identifiés" dans la fiche individu** : Visualisez instantanément toutes les photos d'époque où une personne a été identifiée, avec puce de repérage et accès en un clic à l'atelier d'archive.
+- **Importation de documents & photos** : Prise en charge des photographies de famille et scans d'actes (JPEG, PNG, WebP) par glisser-déposer.
+- **Typologie d'actes et de médias** :
+  - Photographie de famille / Portrait d'époque
   - Acte de Naissance / Baptême
   - Acte de Mariage / Contrat de mariage notarié
   - Acte de Décès / Sépulture
   - Recensement de population & Fiche matricule militaire
-  - Testament, inventaire après décès, titre de propriété
-- **Outils d'examen paléographique** :
+  - Testament, inventaire après décès, livret de famille
+- **Outils d'examen visuel & paléographique** :
   - Zoom fluide haute définition et déplacement panoramique.
   - Rotation à 90°, 180° et 270° pour les registres numérisés à l'horizontale.
-  - Filtres d'amélioration de lecture : Contraste renforcé et Inversion négative (idéal pour les écritures à l'encre délavée).
+  - Filtres d'amélioration de lecture : Contraste renforcé, Négatif et Nuances de gris (idéal pour les écritures à l'encre délavée et les vieux tirages sépia).
 - **Convertisseur Calendrier Républicain** :
   - Conversion instantanée des dates du calendrier révolutionnaire français (1792–1805 : *Vendémiaire, Brumaire, Nivôse...*) en grégorien et réciproquement.
-- **Rattachement direct** : Association manuelle en un clic de l'acte aux fiches des individus et conjoints concernés.
 
 ### 🔐 3. Partage Sécurisé & Accès par Branche
 - **Liens privés personnalisés** :

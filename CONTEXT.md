@@ -88,21 +88,33 @@ interface Individual {
 }
 ```
 
-#### Document d'Archive (`ArchiveDocument`)
+#### Document d'Archive & Photographie (`ArchiveDocument`)
 ```typescript
+interface PhotoTag {
+  id: string;               // Identifiant du repère (ex: 'tag-1')
+  personId: string;         // Identifiant de l'individu rattaché (ex: '@I7@')
+  x: number;                // Coordonnée horizontale en % (0 - 100)
+  y: number;                // Coordonnée verticale en % (0 - 100)
+  width?: number;           // Largeur de cadrage optionnelle en %
+  height?: number;          // Hauteur de cadrage optionnelle en %
+  label?: string;           // Précision contextuelle (ex: "Assis au 1er rang")
+  createdAt?: number;
+}
+
 interface ArchiveDocument {
   id: string;               // Identifiant unique (ex: 'arch-1742-01')
-  title: string;            // Titre descriptif de l'acte
-  type: ArchiveType;        // 'birth' | 'marriage' | 'death' | 'census' | 'military' | 'notarial' | 'other'
-  archiveLocation?: string; // Ex: "Archives Départementales du Morbihan (AD56)"
-  callNumber?: string;      // Ex: "3 E 142/5 - Vue 42/189"
+  title: string;            // Titre descriptif de l'acte ou de la photo
+  type: ArchiveDocumentType;// 'birth' | 'marriage' | 'death' | 'photo' | ...
+  archiveLocation?: string; // Ex: "Archives Départementales d'Ille-et-Vilaine"
+  callNumber?: string;      // Ex: "3 E 142/5 - Vue 42/189" ou cote d'album
   date?: string;            // Date grégorienne ou brute
   republicanDate?: string;  // Ex: "14 Frimaire an II"
-  place?: string;           // Commune ou paroisse
-  transcription?: string;   // Transcription littérale de l'acte
-  notes?: string;           // Mentions marginales
+  place?: string;           // Commune, paroisse ou atelier photo
+  transcription?: string;   // Transcription littérale ou description du cliché
+  notes?: string;           // Mentions marginales ou contexte de la prise de vue
   fileData?: string;        // Données d'image (data URL ou URL de stockage)
   linkedPersonIds: string[];// Identifiants des individus rattachés
+  photoTags?: PhotoTag[];   // Repères cliquables interactifs sur les visages
   createdBy?: string;
   createdAt: number;
 }

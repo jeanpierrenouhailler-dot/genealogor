@@ -59,6 +59,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('tree');
   const [selectedPersonId, setSelectedPersonId] = useState<string>(() => data.rootPersonId || Object.keys(data.individuals)[0]);
+  const [selectedArchiveId, setSelectedArchiveId] = useState<string>('');
 
   // Firebase Auth & Cloud Sync state
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -535,7 +536,10 @@ export default function App() {
             onSelectPerson={setSelectedPersonId}
             onEditPerson={(p) => setEditingPerson(p)}
             onOpenArchives={() => setActiveTab('archives')}
-            onSelectArchive={(docId) => setActiveTab('archives')}
+            onSelectArchive={(docId) => {
+              setSelectedArchiveId(docId);
+              setActiveTab('archives');
+            }}
           />
         )}
 
@@ -543,6 +547,7 @@ export default function App() {
           <ArchivesView
             archives={archives}
             data={data}
+            selectedArchiveId={selectedArchiveId}
             onAddArchive={handleAddArchive}
             onUpdateArchive={handleUpdateArchive}
             onDeleteArchive={handleDeleteArchive}

@@ -94,7 +94,19 @@ export type ArchiveDocumentType =
   | 'notarial'
   | 'military'
   | 'livret'
+  | 'photo'
   | 'other';
+
+export interface PhotoTag {
+  id: string;
+  personId: string;
+  x: number; // percentage (0 - 100)
+  y: number; // percentage (0 - 100)
+  width?: number; // percentage width (optional box, e.g. 10%)
+  height?: number; // percentage height (optional box, e.g. 12%)
+  label?: string; // Optional custom description or role (ex: "Assis au centre", "À l'âge de 18 ans")
+  createdAt?: number;
+}
 
 export interface ArchiveDocument {
   id: string;
@@ -102,10 +114,10 @@ export interface ArchiveDocument {
   type: ArchiveDocumentType;
   archiveLocation?: string; // Dépôt d'archives (ex: AD Finistère, Mairie)
   callNumber?: string;      // Cote d'archives (ex: 3 E 142/12, vue 45/210)
-  date?: string;            // Date de l'acte
+  date?: string;            // Date de l'acte ou de la prise de vue
   republicanDate?: string;  // Équivalent calendrier républicain
-  place?: string;           // Commune, Paroisse
-  transcription?: string;   // Texte fidèlement retranscrit
+  place?: string;           // Commune, Paroisse, Lieu de la photo
+  transcription?: string;   // Texte fidèlement retranscrit ou description
   notes?: string;           // Remarques ou mentions marginales
   fileData?: string;        // Base64 ou URL locale
   fileName?: string;
@@ -114,6 +126,7 @@ export interface ArchiveDocument {
   linkedPersonIds: string[]; // Personnes associées (sujet, époux, parents, témoins)
   linkedFamilyIds: string[];
   linkedEventId?: string;
+  photoTags?: PhotoTag[];    // Tags interactifs placés sur l'image
   createdAt: number;
   updatedAt: number;
 }

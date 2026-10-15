@@ -6,7 +6,18 @@ export function getStoredArchives(): ArchiveDocument[] {
   try {
     const raw = localStorage.getItem(ARCHIVES_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed: ArchiveDocument[] = JSON.parse(raw);
+      // Ensure default photo document is present if not already added
+      const hasPhoto = parsed.some(d => d.id === 'doc-004' || d.type === 'photo');
+      if (!hasPhoto) {
+        const defaults = getDefaultArchives();
+        const photoDoc = defaults.find(d => d.id === 'doc-004');
+        if (photoDoc) {
+          parsed.unshift(photoDoc);
+          saveStoredArchives(parsed);
+        }
+      }
+      return parsed;
     }
   } catch (e) {
     console.error('Erreur lecture archives', e);
@@ -24,6 +35,56 @@ export function saveStoredArchives(archives: ArchiveDocument[]): void {
 
 export function getDefaultArchives(): ArchiveDocument[] {
   return [
+    {
+      id: 'doc-004',
+      title: 'Portrait de famille Martin au studio photographique (vers 1912)',
+      type: 'photo',
+      archiveLocation: 'Collection familiale Martin — Album relié cuir',
+      callNumber: 'ALB-1912 / Cliché n° 4',
+      date: 'vers 1912',
+      place: 'Rennes / Paris (Atelier J. Martin)',
+      transcription: `Photographie d'atelier sur carton d'art représentant trois générations de la famille Martin réunies avant la Grande Guerre.
+L'aïeul Louis Martin est assis au centre tenant sa canne, entouré de ses enfants et de sa petite-fille Jeanne.`,
+      notes: 'Tirage original sépia au gélatino-bromure d\'argent contrecollé sur carton gaufré. Mention imprimée "Photographie d\'Art - J. Martin - Paris".',
+      fileData: '/family_photo.jpg',
+      fileName: 'portrait_famille_martin_1912.jpg',
+      linkedPersonIds: ['@I7@', '@I8@', '@I10@'],
+      linkedFamilyIds: [],
+      photoTags: [
+        {
+          id: 'tag-1',
+          personId: '@I7@',
+          x: 41.8,
+          y: 37.5,
+          width: 8,
+          height: 10,
+          label: 'Grand-père Louis Martin (assis au centre, 82 ans)',
+          createdAt: Date.now() - 86400000,
+        },
+        {
+          id: 'tag-2',
+          personId: '@I8@',
+          x: 27.5,
+          y: 20.0,
+          width: 7,
+          height: 9,
+          label: 'Henri Martin (debout à gauche, père de Jeanne)',
+          createdAt: Date.now() - 86400000,
+        },
+        {
+          id: 'tag-3',
+          personId: '@I10@',
+          x: 29.5,
+          y: 41.5,
+          width: 7,
+          height: 8,
+          label: 'Jeanne Martin enfant (en robe blanche)',
+          createdAt: Date.now() - 86400000,
+        },
+      ],
+      createdAt: Date.now() - 86400000 * 1,
+      updatedAt: Date.now() - 86400000 * 1,
+    },
     {
       id: 'doc-001',
       title: 'Acte de baptême de François Martin (1742)',

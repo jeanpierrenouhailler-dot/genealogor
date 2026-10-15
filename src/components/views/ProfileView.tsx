@@ -1,7 +1,8 @@
 import React from 'react';
 import { 
   User, Calendar, MapPin, Briefcase, FileText, Heart, 
-  Users, Edit3, ArrowLeft, BookOpen, Shield, Award 
+  Users, Edit3, ArrowLeft, BookOpen, Shield, Award,
+  Camera, Tag, ExternalLink
 } from 'lucide-react';
 import { GenealogyData, Individual, ArchiveDocument } from '../../types/genealogy';
 import { computeSosaNumbers } from '../../lib/sosa-aboville';
@@ -31,6 +32,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   // Linked archives
   const personArchives = archives.filter(doc => doc.linkedPersonIds?.includes(person.id));
+
+  // Photos where this person is tagged
+  const taggedPhotos = archives.filter(doc => 
+    doc.photoTags?.some(tag => tag.personId === person.id)
+  );
 
   // Parents
   let father: Individual | undefined;
@@ -220,6 +226,104 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Photographies & Portraits où la personne est identifiée */}
+          <div className="bg-white border border-stone-200/90 rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wider font-mono text-stone-500 flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5 text-amber-800" />
+                <span>Photographies & Clichés Identifiés ({taggedPhotos.length})</span>
+              </h2>
+              <button
+                onClick={onOpenArchives}
+                className="text-xs text-amber-800 hover:underline font-medium flex items-center gap-1"
+              >
+                <span>Atelier photo & archives</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
+
+            {taggedPhotos.length === 0 ? (
+              <div className="p-5 text-center bg-stone-50 rounded-xl border border-dashed border-stone-200 text-xs text-stone-500">
+                <p>Aucune photographie avec identification pour cet ancêtre.</p>
+                <button
+                  onClick={onOpenArchives}
+                  className="mt-2 text-amber-800 font-semibold hover:underline inline-flex items-center gap-1"
+                >
+                  <Tag className="w-3 h-3" />
+                  <span>Importer un cliché et tagger son visage</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {taggedPhotos.map(doc => {
+                  const personTag = doc.photoTags?.find(t => t.personId === person.id);
+                  return (
+                    <div
+                      key={doc.id}
+                      onClick={() => {
+                        onSelectArchive(doc.id);
+                        onOpenArchives();
+                      }}
+                      className="group cursor-pointer bg-[#FBF9F5] border border-stone-200 hover:border-amber-700 hover:shadow-sm rounded-xl overflow-hidden transition-all text-left flex flex-col"
+                    >
+                      {/* Photo Thumbnail with highlight pin indicator */}
+                      <div className="h-36 bg-stone-900 relative overflow-hidden flex items-center justify-center">
+                        {doc.fileData ? (
+                          <img
+                            src={doc.fileData}
+                            alt={doc.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="p-4 text-center text-stone-400 font-serif text-xs">
+                            {doc.title}
+                          </div>
+                        )}
+
+                        {/* Tag locator chip */}
+                        {personTag && (
+                          <div 
+                            style={{ left: `${personTag.x}%`, top: `${personTag.y}%` }}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-amber-600 border-2 border-white text-white font-bold text-[10px] flex items-center justify-center shadow-lg group-hover:scale-125 transition-transform"
+                            title="Emplacement identifié"
+                          >
+                            ✓
+                          </div>
+                        )}
+
+                        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] text-white/90 bg-stone-950/70 backdrop-blur-xs px-2 py-0.5 rounded">
+                          <span className="font-mono">{doc.date || 'Cliché d\'époque'}</span>
+                          <span>{doc.photoTags?.length || 1} personne(s) taggée(s)</span>
+                        </div>
+                      </div>
+
+                      {/* Card Content */}
+                      <div className="p-3 space-y-1.5 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h4 className="font-serif text-xs font-bold text-stone-900 group-hover:text-amber-900 line-clamp-1">
+                            {doc.title}
+                          </h4>
+                          {personTag?.label && (
+                            <p className="text-[11px] text-amber-950 font-medium italic bg-amber-100/60 border border-amber-200 px-1.5 py-0.5 rounded mt-1 line-clamp-1">
+                              « {personTag.label} »
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-1.5 border-t border-stone-200/60 flex items-center justify-between text-[10px] text-stone-500">
+                          <span>{doc.place || 'Lieu inconnu'}</span>
+                          <span className="text-amber-800 font-semibold group-hover:underline">
+                            Voir sur la photo →
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Documents d'archives numérisés rattachés */}

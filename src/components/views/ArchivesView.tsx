@@ -1,16 +1,18 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   FileText, Upload, ZoomIn, ZoomOut, RotateCw, Contrast, 
   Search, Filter, Plus, Calendar, MapPin, Building, 
   Link as LinkIcon, User, Users, Trash2, Edit2, Download,
-  CheckCircle, BookOpen, Eye, X
+  CheckCircle, BookOpen, Eye, X, Image as ImageIcon
 } from 'lucide-react';
-import { ArchiveDocument, ArchiveDocumentType, GenealogyData, Individual } from '../../types/genealogy';
+import { ArchiveDocument, ArchiveDocumentType, GenealogyData, Individual, PhotoTag } from '../../types/genealogy';
 import { parseRepublicanDate } from '../../lib/republican-calendar';
+import { PhotoTagger } from '../PhotoTagger';
 
 interface ArchivesViewProps {
   archives: ArchiveDocument[];
   data: GenealogyData;
+  selectedArchiveId?: string;
   onAddArchive: (doc: ArchiveDocument) => void;
   onUpdateArchive: (doc: ArchiveDocument) => void;
   onDeleteArchive: (id: string) => void;
@@ -27,22 +29,30 @@ const TYPE_LABELS: Record<ArchiveDocumentType, { label: string; color: string }>
   notarial: { label: 'Notarié / Contrat', color: 'bg-purple-50 text-purple-800 border-purple-200' },
   military: { label: 'Matricule Militaire', color: 'bg-stone-100 text-stone-800 border-stone-300' },
   livret: { label: 'Livret de famille', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+  photo: { label: 'Photographie / Portrait', color: 'bg-amber-100 text-amber-900 border-amber-300' },
   other: { label: 'Autre document', color: 'bg-stone-50 text-stone-700 border-stone-200' },
 };
 
 export const ArchivesView: React.FC<ArchivesViewProps> = ({
   archives,
   data,
+  selectedArchiveId,
   onAddArchive,
   onUpdateArchive,
   onDeleteArchive,
   onSelectPerson,
 }) => {
-  const [selectedDocId, setSelectedDocId] = useState<string>(archives[0]?.id || '');
+  const [selectedDocId, setSelectedDocId] = useState<string>(selectedArchiveId || archives[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+
+  useEffect(() => {
+    if (selectedArchiveId) {
+      setSelectedDocId(selectedArchiveId);
+    }
+  }, [selectedArchiveId]);
 
   // Viewer image transformation states
   const [zoom, setZoom] = useState<number>(1);
@@ -180,6 +190,19 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
     );
   };
 
+  const handleUpdateDocumentTags = (tags: PhotoTag[]) => {
+    if (!selectedDoc) return;
+    const tagPersonIds = tags.map(t => t.personId);
+    const mergedPersons = Array.from(new Set([...(selectedDoc.linkedPersonIds || []), ...tagPersonIds]));
+    const updatedDoc: ArchiveDocument = {
+      ...selectedDoc,
+      photoTags: tags,
+      linkedPersonIds: mergedPersons,
+      updatedAt: Date.now(),
+    };
+    onUpdateArchive(updatedDoc);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
       
@@ -190,10 +213,10 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
             FONDS D'ARCHIVES & NUMÉRISATIONS NUMÉROTEES
           </span>
           <h1 className="font-serif text-3xl font-bold text-stone-900 mt-1">
-            Registres Paroissiaux & État Civil
+            Registres Paroissiaux, État Civil & Photographies
           </h1>
           <p className="text-xs text-stone-600 mt-1 max-w-2xl">
-            Importez des scans d'actes d'archives, saisissez les transcriptions et reliez les documents directement aux fiches des ancêtres.
+            Importez des photographies anciennes et des actes numérisés. Taguez précisément chaque visage pour créer un lien direct vers la fiche de vos ancêtres.
           </p>
         </div>
 
@@ -203,7 +226,7 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
             className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-amber-900 hover:bg-amber-950 rounded-lg shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>Numériser un Acte</span>
+            <span>Numériser un Document ou Photo</span>
           </button>
         </div>
       </div>
@@ -221,7 +244,7 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Rechercher cote, commune, date..."
+                placeholder="Rechercher cote, commune, date, type..."
                 className="w-full text-xs bg-stone-50 border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-800"
               />
               <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
@@ -236,6 +259,14 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
                 }`}
               >
                 Tous ({archives.length})
+              </button>
+              <button
+                onClick={() => setFilterType('photo')}
+                className={`px-2 py-0.5 rounded-md whitespace-nowrap transition-colors ${
+                  filterType === 'photo' ? 'bg-amber-100 text-amber-900 font-medium' : 'text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                Photos ({archives.filter(a => a.type === 'photo').length})
               </button>
               <button
                 onClick={() => setFilterType('birth')}
@@ -564,86 +595,19 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
                 </div>
               </div>
 
-              {/* High-Definition Visualizer Container */}
+              {/* High-Definition Visualizer Container with Photo Tagging */}
               <div className="px-6">
-                <div className="bg-stone-900 rounded-xl overflow-hidden relative min-h-[320px] flex flex-col items-center justify-center p-4 select-none">
-                  
-                  {/* Floating Tool Controls (Zoom, Rotate, Contrast) */}
-                  <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-stone-800/90 backdrop-blur-md p-1.5 rounded-lg border border-stone-700 text-white shadow-lg text-xs">
-                    <button
-                      onClick={() => setZoom(z => Math.max(0.5, z - 0.25))}
-                      title="Zoom arrière"
-                      className="p-1.5 hover:bg-stone-700 rounded"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </button>
-                    <span className="font-mono px-1.5">{Math.round(zoom * 100)}%</span>
-                    <button
-                      onClick={() => setZoom(z => Math.min(3, z + 0.25))}
-                      title="Zoom avant"
-                      className="p-1.5 hover:bg-stone-700 rounded"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </button>
-
-                    <div className="w-px h-4 bg-stone-700 mx-1" />
-
-                    <button
-                      onClick={() => setRotation(r => (r + 90) % 360)}
-                      title="Pivoter de 90°"
-                      className="p-1.5 hover:bg-stone-700 rounded flex items-center gap-1"
-                    >
-                      <RotateCw className="w-4 h-4" />
-                    </button>
-
-                    <div className="w-px h-4 bg-stone-700 mx-1" />
-
-                    {/* Filter button */}
-                    <button
-                      onClick={() => {
-                        const modes: Array<'normal' | 'contrast' | 'invert' | 'grayscale'> = ['normal', 'contrast', 'invert', 'grayscale'];
-                        const idx = modes.indexOf(filterMode);
-                        setFilterMode(modes[(idx + 1) % modes.length]);
-                      }}
-                      title="Mode de lecture pour encre ancienne (Contraste / Négatif)"
-                      className={`p-1.5 hover:bg-stone-700 rounded flex items-center gap-1 ${
-                        filterMode !== 'normal' ? 'text-amber-400 font-bold' : ''
-                      }`}
-                    >
-                      <Contrast className="w-4 h-4" />
-                      <span className="text-[10px] uppercase font-mono">{filterMode}</span>
-                    </button>
-                  </div>
-
-                  {/* Document Display Area */}
-                  {selectedDoc.fileData ? (
-                    <div className="overflow-auto max-h-[480px] w-full flex items-center justify-center">
-                      <img
-                        src={selectedDoc.fileData}
-                        alt={selectedDoc.title}
-                        style={{
-                          transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                          filter: filterMode === 'contrast'
-                            ? 'contrast(180%) brightness(95%)'
-                            : filterMode === 'invert'
-                              ? 'invert(100%) contrast(150%)'
-                              : filterMode === 'grayscale'
-                                ? 'grayscale(100%) contrast(140%)'
-                                : 'none',
-                          transition: 'filter 0.2s, transform 0.2s',
-                        }}
-                        className="max-h-[440px] object-contain rounded shadow-md"
-                      />
-                    </div>
-                  ) : (
-                    /* Default Historic Archival Certificate Rendering */
-                    <div
-                      style={{
-                        transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                        filter: filterMode === 'contrast' ? 'contrast(160%)' : filterMode === 'invert' ? 'invert(100%)' : 'none',
-                      }}
-                      className="w-full max-w-lg p-6 bg-[#F7F4EE] text-stone-900 border-4 border-double border-amber-900/30 rounded-lg shadow-inner font-serif transition-transform"
-                    >
+                {selectedDoc.fileData ? (
+                  <PhotoTagger
+                    document={selectedDoc}
+                    data={data}
+                    onUpdateTags={handleUpdateDocumentTags}
+                    onSelectPerson={onSelectPerson}
+                  />
+                ) : (
+                  /* Default Historic Archival Certificate Rendering */
+                  <div className="bg-stone-900 rounded-xl overflow-hidden relative min-h-[320px] flex flex-col items-center justify-center p-6 select-none">
+                    <div className="w-full max-w-lg p-6 bg-[#F7F4EE] text-stone-900 border-4 border-double border-amber-900/30 rounded-lg shadow-inner font-serif transition-transform">
                       <div className="text-center border-b border-stone-300 pb-2 mb-3">
                         <span className="text-[10px] tracking-widest uppercase font-mono text-stone-600 block">
                           EXTRAIT DU REGISTRE DES ACTES DE {selectedDoc.type.toUpperCase()}
@@ -666,8 +630,8 @@ export const ArchivesView: React.FC<ArchivesViewProps> = ({
                         <span>{selectedDoc.date}</span>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Archival Metadata Details & Transcription */}
