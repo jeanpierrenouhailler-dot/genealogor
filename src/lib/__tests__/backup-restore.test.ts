@@ -31,7 +31,7 @@ describe('Sauvegarde et Restauration Complète (P0 - Exigence 4.3)', () => {
     expect(preview.manifest?.checksumSha256.length).toBe(64);
   });
 
-  it('doit rejeter une sauvegarde dont le contenu ou le checksum a été altéré', async () => {
+  it('doit rejeter une sauvegarde non chiffrée dont le contenu ou le checksum a été altéré', async () => {
     const backupJson = await createFullBackup(sampleData, sampleArchives, sampleAccess);
     const parsed = JSON.parse(backupJson);
 
@@ -42,6 +42,40 @@ describe('Sauvegarde et Restauration Complète (P0 - Exigence 4.3)', () => {
     const preview = await previewBackup(tamperedJson);
     expect(preview.isValid).toBe(false);
     expect(preview.error).toContain('altéré');
+  });
+
+  it('doit chiffrer la sauvegarde avec une phrase secrète en format AES-GCM 256', async () => {
+    const passphrase = 'PhraseSecreteFamiliale2026!';
+    const encryptedBackupJson = await createFullBackup(sampleData, sampleArchives, sampleAccess, passphrase);
+
+    const parsed = JSON.parse(encryptedBackupJson);
+    expect(parsed.manifest.format).toBe('genealogor-backup-v2-encrypted');
+    expect(parsed.manifest.isEncrypted).toBe(true);
+    expect(parsed.payload).toBeUndefined();
+    expect(parsed.encryptedPayload).toBeDefined();
+    expect(parsed.encryptedPayload.startsWith('v2:')).toBe(true);
+
+    // Sans mot de passe fourni, la prévisualisation doit signaler que l'archive est chiffrée
+    const previewNoPwd = await previewBackup(encryptedBackupJson);
+    expect(previewNoPwd.isValid).toBe(false);
+    expect(previewNoPwd.isEncrypted).toBe(true);
+    expect(previewNoPwd.error).toContain('phrase secrète');
+
+    // Avec un mauvais mot de passe, doit rejeter proprement
+    const previewBadPwd = await previewBackup(encryptedBackupJson, 'MauvaisMotDePasse');
+    expect(previewBadPwd.isValid).toBe(false);
+    expect(previewBadPwd.isEncrypted).toBe(true);
+    expect(previewBadPwd.error).toContain('incorrecte');
+
+    // Avec le bon mot de passe, doit valider et déchiffrer
+    const previewGoodPwd = await previewBackup(encryptedBackupJson, passphrase);
+    expect(previewGoodPwd.isValid).toBe(true);
+    expect(previewGoodPwd.manifest?.checksumSha256.length).toBe(64);
+
+    // Restauration réussie avec le bon mot de passe
+    const restoreResult = await restoreBackup(encryptedBackupJson, sampleData, sampleArchives, sampleAccess, passphrase);
+    expect(restoreResult.success).toBe(true);
+    expect(restoreResult.data?.genealogy.individuals['@I1@'].name).toBe(sampleData.individuals['@I1@'].name);
   });
 
   it('doit restaurer fidèlement les données et créer la sauvegarde pré-restauration de sécurité', async () => {

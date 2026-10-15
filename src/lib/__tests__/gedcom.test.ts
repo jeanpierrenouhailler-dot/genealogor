@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseGedcom } from '../gedcom-parser';
+import { parseGedcom, parseGedcomDate } from '../gedcom-parser';
 import { serializeGedcomWithReport } from '../gedcom-serializer';
 
-describe('Interopérabilité et Tests GEDCOM (P1 - Exigence 5)', () => {
+describe('Interopérabilité et Tests GEDCOM Multi-Logiciels (P1 - Exigence 5)', () => {
   const sampleGedcomRaw = `0 HEAD
 1 SOUR Genealogor
 1 GEDC
@@ -97,5 +97,102 @@ describe('Interopérabilité et Tests GEDCOM (P1 - Exigence 5)', () => {
     expect(report.maskedLivingCount).toBe(1);
     expect(exportedGedcom).toContain('Martin [Privé]');
     expect(exportedGedcom).not.toContain('Thomas');
+  });
+
+  it('gère les familles recomposées avec conjoints multiples et demi-frères/demi-sœurs', () => {
+    const blendedGedcom = `0 HEAD
+1 SOUR Heredis 2024
+0 @I_FATHER@ INDI
+1 NAME Henri /Martin/
+1 SEX M
+1 FAMS @FAM_1@
+1 FAMS @FAM_2@
+0 @I_WIFE1@ INDI
+1 NAME Jeanne /Le Gall/
+1 SEX F
+1 FAMS @FAM_1@
+0 @I_WIFE2@ INDI
+1 NAME Louise /Moreau/
+1 SEX F
+1 FAMS @FAM_2@
+0 @I_CHILD1@ INDI
+1 NAME Pierre /Martin/
+1 SEX M
+1 FAMC @FAM_1@
+0 @I_CHILD2@ INDI
+1 NAME Suzanne /Martin/
+1 SEX F
+1 FAMC @FAM_2@
+0 @FAM_1@ FAM
+1 HUSB @I_FATHER@
+1 WIFE @I_WIFE1@
+1 CHIL @I_CHILD1@
+0 @FAM_2@ FAM
+1 HUSB @I_FATHER@
+1 WIFE @I_WIFE2@
+1 CHIL @I_CHILD2@
+0 TRLR`;
+
+    const parsed = parseGedcom(blendedGedcom);
+    const father = parsed.individuals['@I_FATHER@'];
+    expect(father.familiesAsSpouse).toEqual(['@FAM_1@', '@FAM_2@']);
+
+    const child1 = parsed.individuals['@I_CHILD1@'];
+    const child2 = parsed.individuals['@I_CHILD2@'];
+    expect(child1.familiesAsChild).toContain('@FAM_1@');
+    expect(child2.familiesAsChild).toContain('@FAM_2@');
+
+    expect(parsed.families['@FAM_1@'].wifeId).toBe('@I_WIFE1@');
+    expect(parsed.families['@FAM_2@'].wifeId).toBe('@I_WIFE2@');
+  });
+
+  it('analyse les dates approximatives en français et anglais (ABT, BET, VERS, AVANT, APRES)', () => {
+    const d1 = parseGedcomDate('ABT 1820');
+    expect(d1?.isApproximate).toBe(true);
+    expect(d1?.year).toBe(1820);
+
+    const d2 = parseGedcomDate('VERS 1785');
+    expect(d2?.isApproximate).toBe(true);
+    expect(d2?.year).toBe(1785);
+
+    const d3 = parseGedcomDate('BET 1810 AND 1815');
+    expect(d3?.isBetween).toBe(true);
+    expect(d3?.year).toBe(1810);
+    expect(d3?.year2).toBe(1815);
+
+    const d4 = parseGedcomDate('AVANT 1850');
+    expect(d4?.isBefore).toBe(true);
+    expect(d4?.year).toBe(1850);
+
+    const d5 = parseGedcomDate('APRES 1792');
+    expect(d5?.isAfter).toBe(true);
+    expect(d5?.year).toBe(1792);
+  });
+
+  it('extrait les médias (OBJE, FILE, TITL) et préserve les tags propriétaires (_UID, _FREL)', () => {
+    const gedcomWithMediaAndVendorTags = `0 HEAD
+1 SOUR Geneatique 2024
+0 @I10@ INDI
+1 NAME Alexandre /Dumas/
+1 SEX M
+1 OBJE
+2 FILE portrait_dumas.jpg
+2 TITL Portrait de l'écrivain
+2 FORM jpg
+1 _UID 4A91B0295F
+1 _FREL Natural
+0 TRLR`;
+
+    const parsed = parseGedcom(gedcomWithMediaAndVendorTags);
+    const dumas = parsed.individuals['@I10@'];
+
+    expect(dumas.media?.length).toBe(1);
+    expect(dumas.media?.[0].file).toBe('portrait_dumas.jpg');
+    expect(dumas.media?.[0].title).toBe("Portrait de l'écrivain");
+    expect(dumas.media?.[0].format).toBe('jpg');
+
+    // Vérifier la préservation des tags non supportés sans perte silencieuse
+    expect(dumas._unsupportedTags?.some(t => t.tag === '_UID')).toBe(true);
+    expect(dumas._unsupportedTags?.some(t => t.tag === '_FREL')).toBe(true);
   });
 });

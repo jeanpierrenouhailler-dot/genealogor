@@ -139,6 +139,11 @@ wss.on('connection', (ws) => {
           return;
         }
 
+        if (roomToken && (typeof roomToken !== 'string' || !/^[a-zA-Z0-9_\-]{8,64}$/.test(roomToken))) {
+          ws.send(JSON.stringify({ type: 'error', code: 'INVALID_TOKEN', message: 'Invalid roomToken format' }));
+          return;
+        }
+
         // Leave existing room if any
         if (info.roomId && info.roomId !== roomId) {
           removeClient(ws);

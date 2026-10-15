@@ -5,13 +5,31 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ---
 
+## [1.3.0] — 2026-10-15
+
+### 🛡️ Sécurité, Audit & Chiffrement Renforcé
+- **Audit & Validation des 6 Piliers de Contrôle Qualité** :
+  - **1. Règles Firestore & Isolation multi-familles** : Validation des règles ABAC zéro-trust garantissant l'étanchéité absolue entre familles (tests unitaires dans `firestore-rules-isolation.test.ts`).
+  - **2. Résilience Hors-Ligne & Local-First** : Persistance versionnée avec gestionnaire `v2.0.0`, protection contre les corruptions de données avec sauvegarde d'urgence, et replay des modifications via file d'attente `PendingQueue`.
+  - **3. Chiffrement Réel des Sauvegardes Exportées** : Implémentation du chiffrement symétrique **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations, SHA-256) pour les fichiers `.genealogor.json`, détection et rejet propre des mauvaises phrases secrètes sans altération de l'état, et sauvegarde de secours pré-restauration pour annulation en un clic.
+  - **4. Compatibilité Multi-Logiciels GEDCOM 5.5.1** : Prise en charge éprouvée des exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**, incluant les sources d'archives (`TITL`, `AUTH`), les médias (`OBJE`, `FILE`), les familles recomposées à conjoints multiples, les dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`) et la préservation intégrale des balises propriétaires.
+  - **5. Confidentialité Étanche des Contemporains** : Protection systématique des personnes nées il y a moins de 100 ans étendue à toutes les vues (Arbre, Fiches, Frise, Carte, Stats), mais aussi à l'atelier d'archives, aux exports GEDCOM et aux flux temps réel (`[Privé]`, `[Confidentiel]`).
+  - **6. Suite de Tests Automatisés & Build** : 38 tests unitaires automatisés sous Vitest validés avec 100 % de succès et compilation de production propre.
+
+- **Sécurité TLS WebSocket en Production (`wss://`) & Autorisation de Salle** :
+  - Détection automatique et bascule vers **`wss://`** dès que l'application est consultée sous HTTPS.
+  - Transmission du jeton d'autorisation de branche (`roomToken`) lors du message `join`.
+  - Contrôle d'accès et limitation de débit (rate limit) à 60 messages / 10s côté serveur Express.
+
+---
+
 ## [1.2.0] — 2026-10-15
 
 ### 🌟 Ajouté
 - **Système Interactif de Marquage de Personnes sur Photos (Photo Tagging)** :
-  - **Repérage direct sur les photographies et scans** : Possibilité de cliquer sur n'importe quelle zone d'un cliché (visage, personne assise/debout) pour placer une étiquette interactive avec coordonnées relatives proportionnelles en pourcentage.
+  - **Repérage direct sur les photographies et scans** : Clic sur n'importe quelle zone d'un cliché (visage, personne assise/debout) pour placer une étiquette interactive avec coordonnées relatives proportionnelles en pourcentage.
   - **Liaison directe avec l'arbre familial** : Boîte de recherche instantanée pour rattacher le tag à n'importe quel individu de l'arbre généalogique avec indication de son sexe, patronyme et dates de vie.
-  - **Infobulles riches & interactives au survol** : Affichage d'une carte d'identité flottante présentant le nom complet, les dates de vie, le rôle ou la précision (ex : *« Assis au centre, 82 ans »*), et un bouton d'accès direct vers sa fiche.
+  - **Infobulles riches & interactives au survol** : Affichage d'une carte d'identité flottante présentant le nom complet, les dates de vie, le rôle ou la précision contextuelle, et un bouton d'accès direct vers sa fiche.
   - **Navigation instantanée vers la fiche ancêtre** : Un clic sur un repère photo ouvre immédiatement la fiche généalogique complète de la personne concernée.
   - **Galerie des photographies identifiées dans la fiche individu (`ProfileView`)** :
     - Nouvelle section dédiée présentant toutes les photographies d'époque où la personne a été marquée, avec vignette haute résolution, badge de positionnement visuel (`✓`) et rôle contextuel.
@@ -39,7 +57,7 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 - **Collaboration Temps Réel & Présence** :
   - Serveur de relais WebSocket (`server.ts`) avec support des salles virtuelles isolées par famille.
   - Détection en direct des pairs connectés et indicateur de présence dans la barre de navigation.
-  - File d'attente hors-ligne (`PendingQueue`) rejouant automatiquement les modifications lors de la reconnexion.
+  - File d'attente hors-ligne (`PendingQueue`) rejouant automatiquement les modifications lors de la reconexion.
 - **Sauvegarde Complète & Fusion Intelligente** :
   - Exportation / Importation d'une archive intégrale chiffrée (arbre + actes numérisés + règles d'accès) avec empreinte de contrôle SHA-256.
   - Assistant de fusion pour résoudre les doublons d'individus avec comparaison attribut par attribut.

@@ -194,10 +194,14 @@ export default function App() {
 
   // 4. Initialize Real-time WebSocket connection
   useEffect(() => {
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const currentToken = urlParams?.get('token') || pendingBranchAccess?.shareToken || '';
+
     realtimeClient.init(
       roomId, 
       currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : userRole === 'editor' ? 'Éditeur' : 'Visiteur'),
-      currentBranchScope
+      currentBranchScope,
+      currentToken
     );
 
     const unsubConn = realtimeClient.on('connection:change', (info) => {
@@ -308,6 +312,15 @@ export default function App() {
     if (currentBranchScope === 'all') return data;
     return filterGenealogyData(data, data.rootPersonId || Object.keys(data.individuals)[0], currentBranchScope, true);
   }, [data, currentBranchScope]);
+
+  // Branch filtering: get active archives matching the visible individuals
+  const effectiveArchives = useMemo(() => {
+    if (currentBranchScope === 'all') return archives;
+    const allowedIds = new Set(Object.keys(effectiveData.individuals));
+    return archives.filter(arc =>
+      arc.linkedPersonIds.length === 0 || arc.linkedPersonIds.some(id => allowedIds.has(id))
+    );
+  }, [archives, currentBranchScope, effectiveData]);
 
   // Archive count per person
   const archiveCountByPerson = useMemo(() => {
@@ -532,7 +545,7 @@ export default function App() {
           <ProfileView
             personId={selectedPersonId}
             data={effectiveData}
-            archives={archives}
+            archives={effectiveArchives}
             onSelectPerson={setSelectedPersonId}
             onEditPerson={(p) => setEditingPerson(p)}
             onOpenArchives={() => setActiveTab('archives')}
@@ -545,8 +558,8 @@ export default function App() {
 
         {activeTab === 'archives' && (
           <ArchivesView
-            archives={archives}
-            data={data}
+            archives={effectiveArchives}
+            data={effectiveData}
             selectedArchiveId={selectedArchiveId}
             onAddArchive={handleAddArchive}
             onUpdateArchive={handleUpdateArchive}
@@ -634,8 +647,8 @@ export default function App() {
       <ExportImportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
-        data={data}
-        archives={archives}
+        data={userRole === 'admin' ? data : effectiveData}
+        archives={userRole === 'admin' ? archives : effectiveArchives}
         accessList={accessList}
         onLoadGedcom={handleLoadGedcom}
         onRestoreBackup={handleRestoreBackup}

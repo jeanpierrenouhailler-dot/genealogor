@@ -1,19 +1,21 @@
-# 🌳 Genealogor — Arbre Familial & Archives Numérisées
+# 🌳 Genealogor — Arbre Familial, Archives Numérisées & Marquage Photo
 
 <div align="center">
 
-![Genealogor Banner](docs/preview.jpg)
+![Genealogor Interface Principale](docs/preview.jpg)
 
-**Application moderne de généalogie collaborative, partage sécurisé par branche et studio d'archives numérisées.**
+**Plateforme moderne de généalogie collaborative, studio d'archives paléographiques et partage sécurisé par branche.**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.3-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Firestore%20%26%20Auth-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![WebSockets](https://img.shields.io/badge/WebSockets-TLS%20(wss%3A%2F%2F)-00ADD8?logo=websocket&logoColor=white)](https://developer.mozilla.org/fr/docs/Web/API/WebSocket)
+[![Tests](https://img.shields.io/badge/Tests-38%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/Licence-Apache%202.0-green.svg)](LICENSE)
 
-[✨ Fonctionnalités](#-fonctionnalités-phares) • [🏛️ Studio d'Archives](#-studio-darchives-numérisées) • [🔐 Partage & Sécurité](#-partage-sécurisé-par-branche) • [🚀 Démarrage](#-démarrage-rapide) • [📐 Architecture](#-architecture-technique)
+[✨ Fonctionnalités](#-fonctionnalités-phares) • [🏷️ Marquage Photo](#-marquage-photo-interactif-photo-tagging) • [🔐 Sécurité & Chiffrement](#-sécurité-et-confidentialité) • [⚡ Temps Réel & TLS](#-collaboration-temps-réel--sécurité-tls) • [🚀 Démarrage](#-démarrage-rapide) • [🧪 Tests & Qualité](#-tests-automatisés--couverture)
 
 </div>
 
@@ -21,67 +23,84 @@
 
 ## 🌟 Présentation
 
-**Genealogor** est conçu pour les passionnés de généalogie et les familles souhaitant explorer, documenter et transmettre leur histoire commune. 
+**Genealogor** est une application web conçue pour les passionnés de généalogie, les historiens familiaux et les familles souhaitant explorer, documenter et transmettre leur lignée.
 
-Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynamisme des outils collaboratifs actuels, Genealogor permet de visualiser les lignées familiales, d'indexer des actes manuscrits anciens, et de partager des branches spécifiques avec vos proches via des **liens privés protégés par mot de passe**, sans imposer la création d'un compte obligatoire à vos cousins.
+Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynamisme des outils collaboratifs actuels, Genealogor permet de visualiser les lignées familiales, d'indexer des actes manuscrits anciens, de **marquer les visages sur les photographies d'époque**, et de partager des branches spécifiques avec vos proches via des **liens privés protégés par mot de passe**, sans imposer la création d'un compte obligatoire à vos cousins.
 
 ---
 
 ## ✨ Fonctionnalités Phares
 
 ### 🌿 1. Visualisation & Navigation dans l'Arbre
-- **Multi-vues interactives** :
+- **Multi-vues synchronisées** :
   - **Vue Arbre classique & Ascendance** : Arbre généalogique hiérarchique avec numérotation **Sosa-Stradonitz** (de cujus = 1, père = 2n, mère = 2n+1).
-  - **Descendance & Fratrie** : Visualisation des unions, conjoints multiples et enfants.
-  - **Fiche Biographique Individuelle** : Synthèse de vie complète (naissance, baptême, mariage, profession, domicile, décès, sépulture).
-  - **Chronologie & Frise Historique** : Mise en perspective des étapes familiales avec les grands repères de l'histoire de France (Révolution, Empire, Guerres mondiales).
+  - **Descendance & Fratrie** : Visualisation des unions multiples, familles recomposées et enfants.
+  - **Fiche Biographique Individuelle** : Synthèse de vie complète (naissance, baptême, mariage, profession, résidences, décès, sépulture, sources et médias).
+  - **Chronologie & Frise Historique** : Mise en perspective des étapes familiales avec les grands repères de l'histoire de France (Révolution, Premier Empire, Guerres mondiales).
   - **Carte Géographique** : Cartographie des migrations et dispersion géographique des ancêtres.
-  - **Statistiques Généalogiques** : Âge moyen au mariage, longévité par siècle, répartition des naissances par saison et par patronyme.
+  - **Statistiques Généalogiques** : Âge moyen au mariage, longévité par siècle, répartition des naissances par saison et patronymes fréquents.
 
-### 📜 2. Studio d'Archives & Marquage Photo Interactif (Photo Tagging)
-- **Marquage de personnes sur les photos (Photo Tagging)** :
-  - **Repères cliquables interactifs** : Cliquez sur n'importe quel visage ou personnage d'une photographie de famille ou scan d'archive pour créer un repère visuel précis.
-  - **Recherche & association en direct** : Sélection d'un ancêtre de l'arbre en quelques frappes avec affichage de ses dates et de son patronyme.
-  - **Infobulles au survol & lien direct** : Survoler un tag affiche l'identité de l'ancêtre, ses dates et son rôle sur la photo, avec un bouton vers sa fiche individuelle complète.
-  - **Section "Photographies & Portraits Identifiés" dans la fiche individu** : Visualisez instantanément toutes les photos d'époque où une personne a été identifiée, avec puce de repérage et accès en un clic à l'atelier d'archive.
-- **Importation de documents & photos** : Prise en charge des photographies de famille et scans d'actes (JPEG, PNG, WebP) par glisser-déposer.
-- **Typologie d'actes et de médias** :
-  - Photographie de famille / Portrait d'époque
-  - Acte de Naissance / Baptême
-  - Acte de Mariage / Contrat de mariage notarié
-  - Acte de Décès / Sépulture
-  - Recensement de population & Fiche matricule militaire
-  - Testament, inventaire après décès, livret de famille
+---
+
+### 🏷️ 2. Studio d'Archives & Marquage Photo Interactif (Photo Tagging)
+
+<div align="center">
+  <img src="docs/photo_tagging.jpg" alt="Atelier de marquage de photographies anciennes" width="85%" style="border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
+  <p><em>Exemple de photographie ancienne de famille (vers 1912) avec marquage interactif des ancêtres.</em></p>
+</div>
+
+- **Repères interactifs sur les visages (Photo Tagging)** :
+  - **Mode Identification en un clic** : Cliquez sur n'importe quel visage ou personnage d'une photographie de famille pour ouvrir instantanément le dialogue d'association.
+  - **Recherche prédictive dans la généalogie** : Saisissez un prénom ou un patronyme pour relier le repère à un ancêtre existant avec rappel de ses dates et lien de parenté.
+  - **Infobulles enrichies au survol** : Affiche le nom, les années de naissance/décès, le rôle sur la photo et un bouton d'accès direct à sa fiche individuelle.
+  - **Section dédiée sur la fiche individu** : La section *« Photographies & Portraits Identifiés »* récapitule toutes les photos d'archives où la personne a été identifiée, avec puce visuelle et bouton ouvrant directement le cliché dans l'atelier d'archive.
+  - **Synchronisation automatique** : L'ajout ou la suppression d'un tag maintient l'intégrité de la liste `linkedPersonIds` du document.
+
 - **Outils d'examen visuel & paléographique** :
-  - Zoom fluide haute définition et déplacement panoramique.
+  - Zoom haute définition fluide jusqu'à 300 % et déplacement panoramique.
   - Rotation à 90°, 180° et 270° pour les registres numérisés à l'horizontale.
   - Filtres d'amélioration de lecture : Contraste renforcé, Négatif et Nuances de gris (idéal pour les écritures à l'encre délavée et les vieux tirages sépia).
-- **Convertisseur Calendrier Républicain** :
-  - Conversion instantanée des dates du calendrier révolutionnaire français (1792–1805 : *Vendémiaire, Brumaire, Nivôse...*) en grégorien et réciproquement.
+  - **Convertisseur Calendrier Républicain** : Conversion instantanée des dates révolutionnaires françaises (1792–1805 : *Vendémiaire, Brumaire, Nivôse...*) en grégorien.
+
+---
 
 ### 🔐 3. Partage Sécurisé & Accès par Branche
 - **Liens privés personnalisés** :
   - Génération d'URLs uniques par branche (**Branche Paternelle**, **Branche Maternelle**, ou **Arbre Complet**).
 - **Protection par mot de passe de branche** :
-  - Vos cousins saisissent simplement le mot de passe partagé de leur branche pour déverrouiller l'accès.
-  - **Aucun compte Gmail requis** : accès immédiat en lecture ou suggestion d'ajouts.
+  - Vos proches saisissent simplement le mot de passe partagé de leur branche pour déverrouiller l'accès.
+  - **Aucun compte requis** : accès immédiat en lecture ou suggestion d'ajouts.
 - **Niveaux de permissions granulaires** :
   - 👁️ **Lecteur** : Consultation sécurisée de la branche autorisée.
-  - ✏️ **Contributeur / Éditeur** : Capacité d'enrichir les fiches et d'importer de nouveaux actes.
-  - 👑 **Administrateur** : Contrôle complet, gestion des mots de passe et export.
-- **Protection de la vie privée (RGPD)** :
-  - Masquage automatique des personnes vivantes (moins de 100 ans ou sans date de décès confirmée) lors des partages externes.
+  - ✏️ **Contributeur / Éditeur** : Enrichissement des fiches et import de nouveaux actes.
+  - 👑 **Administrateur** : Contrôle complet, gestion des mots de passe, règles d'accès et export.
 
-### ⚡ 4. Collaboration Temps Réel & Synchronisation Hybride
-- **Relais WebSocket en direct** : Voyez instantanément les modifications apportées par d'autres membres de la famille connectés simultanément.
-- **Indicateur de présence** : Nombre de pairs connectés en direct dans la salle familiale.
-- **Local-First & Résilience hors-ligne** : Vos données restent consultables et modifiables même sans connexion Internet, avec mise en file d'attente des changements (`PendingQueue`) et synchronisation automatique lors du retour en ligne.
-- **Cloud Firebase Firestore** : Persistance sécurisée des arbres, actes et permissions avec règles de sécurité ABAC zéro-trust.
+---
 
-### 💾 5. Compatibilité GEDCOM & Sauvegardes
-- **Import / Export GEDCOM 5.5.1** : Standard universel de la généalogie compatible avec Geneanet, Filae, Heredis, Geneatique, MyHeritage, FamilySearch.
-- **Sauvegarde intégrale chiffrée** : Export complet de l'arbre, des archives numérisées et des configurations au format JSON avec somme de contrôle **SHA-256**.
-- **Module de fusion intelligente** : Détection automatique des doublons avec comparaison champ par champ (dates, lieux, filiation).
+### 🛡️ 4. Sécurité et Confidentialité (6 Piliers de Contrôle)
+
+| Pilier de Contrôle | Mécanisme implémenté | Statut de validation |
+| :--- | :--- | :--- |
+| **1. Règles Firestore & Isolation** | ABAC strict dans `firestore.rules`. Un utilisateur ne peut ni lire, ni modifier, ni lister l'arbre ou les archives d'une autre famille. Seul l'administrateur ou le propriétaire peut gérer les accès. | ✅ Vérifié et couvert par tests unitaires dédiés |
+| **2. Mode Hors-Ligne & Résilience** | Architecture Local-First avec conteneurs versionnés (`v2.0.0`), file d'attente `PendingChange` et reprise automatique sans écrasement concurrentiel. | ✅ Vérifié et couvert par tests de corruption et replay |
+| **3. Chiffrement des Sauvegardes** | Sauvegardes complètes au format `.genealogor.json` protégées en **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations), contrôle d'intégrité **SHA-256** et sauvegarde de secours pré-restauration. | ✅ Vérifié avec tests de mauvaises phrases et intégrité |
+| **4. Compatibilité GEDCOM Multi-Logiciels** | Standard GEDCOM 5.5.1 testé avec les exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**. Prise en charge des familles recomposées, conjoints multiples, dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`), sources et médias `OBJE`. | ✅ Vérifié en aller-retour (round-trip) sans perte |
+| **5. Confidentialité des Personnes Vivantes** | Protection active des contemporains (< 100 ans ou sans date de décès). Anonymisation étanche (`[Privé]`, `[Confidentiel]`, suppression des notes et des lieux précis) appliquée sur toutes les vues, les recherches, les exports, les archives et le temps réel. | ✅ Vérifié de bout en bout |
+| **6. Tests Automatisés & Build** | Suite complète de 38 tests unitaires avec Vitest, exécution sous TypeScript strict et build de production optimisé via Vite. | ✅ 38/38 tests validés, build réussi |
+
+---
+
+### ⚡ 5. Collaboration Temps Réel & Sécurité TLS
+
+> 🛡️ **Protection des communications en production** :
+> 
+> En production (accès via HTTPS), la communication WebSocket bascule automatiquement sur **`wss://` (WebSocket Secure sous TLS)** :
+> ```typescript
+> const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+> const wsUrl = `${protocol}//${window.location.host}/ws`;
+> ```
+> 
+> Chaque client transmet son jeton de partage (`roomToken`) lors du message `join`. Le serveur Express valide le format des identifiants, applique une limitation de débit (rate limiting à 60 msg/10s), vérifie la taille maximale des payloads (512 Ko) et n'autorise la diffusion d'actions (`sync:action`) qu'aux clients authentifiés ayant rejoint la même salle familiale isolée.
 
 ---
 
@@ -92,25 +111,28 @@ Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynami
 │                        Navigateur Client (React 19)                    │
 │                                                                        │
 │   ┌────────────────────┐   ┌───────────────────┐   ┌───────────────┐   │
-│   │   Vues Arbre &     │   │ Studio d'Archives │   │  Gestion des  │   │
-│   │   Fiches Personnes │   │   & Paléographie  │   │     Accès     │   │
+│   │   Vues Arbre &     │   │ Atelier d'Archive │   │  Gestion des  │   │
+│   │   Fiches Personnes │   │ & Photo Tagging   │   │ Accès Branche │   │
 │   └─────────┬──────────┘   └─────────┬─────────┘   └───────┬───────┘   │
 │             │                        │                     │           │
 │             ▼                        ▼                     ▼           │
 │   ┌────────────────────────────────────────────────────────────────┐   │
 │   │            Moteur Central & Gestionnaire d'État                │   │
-│   │    - Filtre de branche & Anonymisation vivants                 │   │
-│   │    - Validateur chronologique & Détection d'anomalies          │   │
-│   │    - Moteur cryptographique AES-GCM 256 / PBKDF2               │   │
+│   │    - Filtre de branche & Anonymisation vivants (effectiveData) │   │
+│   │    - Validateur chronologique & Détecteur de cycles            │   │
+│   │    - Moteur cryptographique AES-GCM 256 / PBKDF2 / SHA-256    │   │
+│   │    - File d'attente hors-ligne & Résilience Local-First        │   │
 │   └───────────────┬────────────────────────────┬───────────────────┘   │
 └───────────────────┼────────────────────────────┼───────────────────────┘
-                    ▼                            ▼
+                    │                            │
+      wss:// (TLS)  ▼                            ▼  HTTPS SDK v13
    ┌────────────────────────────────┐   ┌────────────────────────────────┐
    │    Serveur Node.js / Express   │   │     Google Cloud Firestore     │
    │                                │   │                                │
-   │  - WebSocket Relay (ws://)     │   │  - Arbres (/trees/{id})        │
-   │  - Diffusion en temps réel     │   │  - Archives numérisées         │
-   │  - Gestion des présences       │   │  - Règles ABAC Zero-Trust      │
+   │  - Relais WebSocket TLS (wss)  │   │  - Arbres (/trees/{id})        │
+   │  - Autorisation des salles     │   │  - Archives numérisées         │
+   │  - Rate limiting & assainisse- │   │  - Règles ABAC Zero-Trust      │
+   │    ment des messages           │   │  - Isolation multi-familles    │
    └────────────────────────────────┘   └────────────────────────────────┘
 ```
 
@@ -120,14 +142,14 @@ Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynami
 
 | Domaine | Technologie | Rôle |
 | :--- | :--- | :--- |
-| **Frontend** | React 19 + TypeScript 7 | Interface utilisateur réactive et typage strict |
-| **Bundler & Build** | Vite 8 + TSX | Compilation ultra-rapide et middlewares de dev |
+| **Frontend** | React 19 + TypeScript 7 | Interface utilisateur réactive et typage strict sans concession |
+| **Bundler & Build** | Vite 8 + TSX | Compilation instantanée, middlewares de dev et build optimisé |
 | **Design System** | Tailwind CSS 4 + Lucide Icons | Typographie éditoriale, thème parchemin musée (`#FBF9F5`) |
-| **Backend & Temps Réel** | Express 4 + ws (WebSockets) | Serveur applicatif et relais de synchronisation pair-à-pair |
-| **Persistance Cloud** | Firebase Firestore (SDK v13) | Stockage distribué des arbres généalogiques et actes |
+| **Backend & Temps Réel** | Express 4 + ws (WebSockets TLS) | Serveur applicatif, relais sécurisé et synchronisation multi-utilisateurs |
+| **Persistance Cloud** | Firebase Firestore (SDK v13) | Stockage distribué des arbres généalogiques et fonds d'archives |
 | **Authentification** | Firebase Auth (Google Sign-In) | Connexion administrateur et sécurité des écritures |
 | **Cryptographie** | Web Crypto API native | PBKDF2 (100k itérations), AES-GCM 256-bit, SHA-256 |
-| **Standard Métier** | GEDCOM 5.5.1 + Calendrier Républicain | Interopérabilité généalogique et archives françaises |
+| **Standard Métier** | GEDCOM 5.5.1 + Calendrier Républicain | Interopérabilité généalogique et paléographie française |
 
 ---
 
@@ -150,32 +172,37 @@ npm install
 npm run dev
 ```
 
-Ouvrez ensuite votre navigateur sur **`http://localhost:3000`**.
+Ouvrez ensuite votre navigateur sur **`http://localhost:3000`** (ou l'URL HTTPS fournie par votre hébergeur).
 
-### Scripts Disponibles
-- `npm run dev` : Démarre le serveur complet avec Express, WebSockets et Vite.
-- `npm run build` : Compile l'application pour la production.
-- `npm run start` : Lance l'application en mode production.
+---
+
+## 🧪 Tests Automatisés & Couverture
+
+La suite de tests unitaires valide l'ensemble des règles métier, de la sécurité et de la résilience :
+
+```bash
+# Lancer tous les tests unitaires
+npm test
+```
+
+### Détail des 7 Suites de Tests (38 tests au total)
+1. `src/lib/__tests__/firestore-rules-isolation.test.ts` (7 tests) : Isolation multi-locataires, interdiction des lectures non autorisées, protection des suppressions.
+2. `src/lib/__tests__/crypto.test.ts` (6 tests) : Chiffrement AES-GCM 256, sel unique par opération, hachage PBKDF2, génération de jetons.
+3. `src/lib/__tests__/backup-restore.test.ts` (4 tests) : Sauvegarde chiffrée avec phrase secrète, détection des mauvaises phrases, intégrité SHA-256, retour arrière de sécurité.
+4. `src/lib/__tests__/gedcom.test.ts` (6 tests) : Round-trip GEDCOM, masquage des contemporains, familles recomposées, dates approximatives françaises/anglaises, médias `OBJE` et balises propriétaires.
+5. `src/lib/__tests__/offline-and-realtime.test.ts` (5 tests) : Persistance versionnée, file d'attente des modifications hors-ligne, reprise après corruption, marquage photo interactif.
+6. `src/lib/__tests__/privacy.test.ts` (5 tests) : Règle des 100 ans, déduction du statut vital via les parents, anonymisation étanche des contemporains.
+7. `src/lib/__tests__/validation-and-merge.test.ts` (5 tests) : Validation chronologique (anomalies de dates, parents trop jeunes), détection de cycles interdits, fusion de doublons sans orphelins.
+
+---
+
+## 📄 Scripts Disponibles
+
+- `npm run dev` : Démarre le serveur Express avec relais WebSocket et Vite sur le port 3000.
+- `npm run build` : Compile l'application pour la production (`dist/`).
+- `npm run start` : Lance l'application en mode production via `server.ts`.
+- `npm run test` : Exécute l'ensemble de la suite de tests automatisés avec Vitest.
 - `npm run lint` : Vérifie la validité du typage TypeScript (`tsc --noEmit`).
-
----
-
-## 🔒 Sécurité & Confidentialité
-
-- **Zero-Trust ABAC** : Les règles Firestore (`firestore.rules`) appliquent un contrôle d'accès basé sur les attributs. Seuls les créateurs et éditeurs déclarés peuvent modifier un arbre.
-- **Chiffrement de bout en bout des sauvegardes** : Les archives de sauvegarde exportées peuvent être chiffrées avec votre mot de passe maître via AES-GCM.
-- **Protection des mineurs et personnes contemporaines** : L'algorithme masque automatiquement les données sensibles (dates, lieux, notes) des individus nés il y a moins d'un siècle pour les utilisateurs en mode visiteur ou lecteur de branche.
-
----
-
-## 🤝 Contribution
-
-Les contributions, signalements de bugs et suggestions d'améliorations sont les bienvenus !
-1. Forkez le projet
-2. Créez votre branche de fonctionnalité (`git checkout -b feature/nouvelle-fonctionnalite`)
-3. Committez vos modifications (`git commit -m 'feat: ajout du support des sources notariées'`)
-4. Poussez sur votre branche (`git push origin feature/nouvelle-fonctionnalite`)
-5. Ouvrez une **Pull Request**
 
 ---
 

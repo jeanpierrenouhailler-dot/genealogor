@@ -1,8 +1,9 @@
 import { GenealogyData, ArchiveDocument, BranchAccess } from '../types/genealogy';
 import { STORAGE_KEYS } from './storage-manager';
+import { encryptData, decryptData } from './crypto';
 
 export interface BackupManifest {
-  format: 'genealogor-backup-v2';
+  format: 'genealogor-backup-v2' | 'genealogor-backup-v2-encrypted';
   appVersion: string;
   exportedAt: string;
   treeTitle: string;
@@ -13,19 +14,22 @@ export interface BackupManifest {
     accessRulesCount: number;
   };
   checksumSha256: string;
+  isEncrypted?: boolean;
 }
 
 export interface BackupPackage {
   manifest: BackupManifest;
-  payload: {
+  payload?: {
     genealogy: GenealogyData;
     archives: ArchiveDocument[];
     accessList: BranchAccess[];
   };
+  encryptedPayload?: string;
 }
 
 export interface BackupPreview {
   isValid: boolean;
+  isEncrypted?: boolean;
   error?: string;
   manifest?: BackupManifest;
   dataSummary?: {
@@ -45,12 +49,14 @@ async function computeChecksum(str: string): Promise<string> {
 }
 
 /**
- * Crée un paquet de sauvegarde complet avec manifeste et empreinte d'intégrité SHA-256.
+ * Crée un paquet de sauvegarde complet avec manifeste, empreinte d'intégrité SHA-256
+ * et option de chiffrement de bout en bout AES-GCM 256-bit avec phrase secrète.
  */
 export async function createFullBackup(
   genealogy: GenealogyData,
   archives: ArchiveDocument[],
-  accessList: BranchAccess[]
+  accessList: BranchAccess[],
+  passphrase?: string
 ): Promise<string> {
   const individuals = Object.values(genealogy.individuals);
   const families = Object.values(genealogy.families);
@@ -64,8 +70,10 @@ export async function createFullBackup(
   const payloadString = JSON.stringify(payload);
   const checksum = await computeChecksum(payloadString);
 
+  const isEncrypted = Boolean(passphrase && passphrase.trim().length > 0);
+
   const manifest: BackupManifest = {
-    format: 'genealogor-backup-v2',
+    format: isEncrypted ? 'genealogor-backup-v2-encrypted' : 'genealogor-backup-v2',
     appVersion: '2.0.0',
     exportedAt: new Date().toISOString(),
     treeTitle: genealogy.sourceHeader || 'Arbre Familial',
@@ -76,7 +84,17 @@ export async function createFullBackup(
       accessRulesCount: accessList.length,
     },
     checksumSha256: checksum,
+    isEncrypted,
   };
+
+  if (isEncrypted) {
+    const encryptedPayload = await encryptData(payloadString, passphrase!.trim());
+    const backupPackage: BackupPackage = {
+      manifest,
+      encryptedPayload,
+    };
+    return JSON.stringify(backupPackage, null, 2);
+  }
 
   const backupPackage: BackupPackage = {
     manifest,
@@ -88,22 +106,57 @@ export async function createFullBackup(
 
 /**
  * Prévisualise et valide l'intégrité d'une sauvegarde avant restauration.
+ * Détecte les sauvegardes chiffrées et gère la phrase secrète.
  */
-export async function previewBackup(jsonContent: string): Promise<BackupPreview> {
+export async function previewBackup(jsonContent: string, passphrase?: string): Promise<BackupPreview> {
   try {
     const parsed = JSON.parse(jsonContent);
 
-    if (!parsed || typeof parsed !== 'object' || !parsed.manifest || !parsed.payload) {
+    if (!parsed || typeof parsed !== 'object' || !parsed.manifest) {
       return { isValid: false, error: 'Structure de fichier de sauvegarde non reconnue.' };
     }
 
-    const { manifest, payload } = parsed as BackupPackage;
+    const { manifest } = parsed as BackupPackage;
 
-    if (manifest.format !== 'genealogor-backup-v2' && manifest.format !== ('genealogor-backup-v1' as any)) {
+    if (
+      manifest.format !== 'genealogor-backup-v2' && 
+      manifest.format !== 'genealogor-backup-v2-encrypted' &&
+      manifest.format !== ('genealogor-backup-v1' as any)
+    ) {
       return { isValid: false, error: 'Format de sauvegarde non compatible.' };
     }
 
-    // Vérifier l'empreinte de contrôle (checksum)
+    // Gestion du chiffrement
+    let payload = parsed.payload;
+
+    if (manifest.format === 'genealogor-backup-v2-encrypted' || parsed.encryptedPayload) {
+      if (!passphrase || passphrase.trim().length === 0) {
+        return {
+          isValid: false,
+          isEncrypted: true,
+          manifest,
+          error: 'Cette sauvegarde est protégée par chiffrement AES-GCM. Veuillez saisir la phrase secrète.',
+        };
+      }
+
+      try {
+        const decryptedStr = await decryptData(parsed.encryptedPayload!, passphrase.trim());
+        payload = JSON.parse(decryptedStr);
+      } catch (decryptErr) {
+        return {
+          isValid: false,
+          isEncrypted: true,
+          manifest,
+          error: 'Phrase secrète incorrecte ou sauvegarde altérée.',
+        };
+      }
+    }
+
+    if (!payload) {
+      return { isValid: false, error: 'Contenu de la sauvegarde manquant ou inaccessible.' };
+    }
+
+    // Vérifier l'empreinte de contrôle (checksum SHA-256)
     const payloadString = JSON.stringify(payload);
     const calculatedChecksum = await computeChecksum(payloadString);
 
@@ -114,7 +167,7 @@ export async function previewBackup(jsonContent: string): Promise<BackupPreview>
       };
     }
 
-    const inds = Object.values(payload.genealogy?.individuals || {});
+    const inds = Object.values((payload.genealogy?.individuals || {}) as Record<string, any>);
     let earliestYear: number | undefined;
     let latestYear: number | undefined;
     const surnames = new Set<string>();
@@ -128,12 +181,13 @@ export async function previewBackup(jsonContent: string): Promise<BackupPreview>
       }
     }
 
-    const rootPerson = payload.genealogy.rootPersonId
+    const rootPerson = payload.genealogy?.rootPersonId
       ? payload.genealogy.individuals[payload.genealogy.rootPersonId]
       : inds[0];
 
     return {
       isValid: true,
+      isEncrypted: manifest.isEncrypted || Boolean(parsed.encryptedPayload),
       manifest,
       dataSummary: {
         rootPersonName: rootPerson?.name || 'Inconnu',
@@ -155,9 +209,10 @@ export async function restoreBackup(
   jsonContent: string,
   currentGenealogy: GenealogyData,
   currentArchives: ArchiveDocument[],
-  currentAccess: BranchAccess[]
-): Promise<{ success: boolean; data?: BackupPackage['payload']; error?: string }> {
-  const preview = await previewBackup(jsonContent);
+  currentAccess: BranchAccess[],
+  passphrase?: string
+): Promise<{ success: boolean; data?: NonNullable<BackupPackage['payload']>; error?: string }> {
+  const preview = await previewBackup(jsonContent, passphrase);
   if (!preview.isValid || !preview.manifest) {
     return { success: false, error: preview.error || 'Sauvegarde invalide' };
   }
@@ -173,9 +228,17 @@ export async function restoreBackup(
   }
 
   const parsed = JSON.parse(jsonContent) as BackupPackage;
+  if (parsed.encryptedPayload) {
+    const decryptedStr = await decryptData(parsed.encryptedPayload, passphrase!.trim());
+    return {
+      success: true,
+      data: JSON.parse(decryptedStr),
+    };
+  }
+
   return {
     success: true,
-    data: parsed.payload,
+    data: parsed.payload!,
   };
 }
 

@@ -30,6 +30,9 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   const fileInputBackupRef = useRef<HTMLInputElement>(null);
 
   const [hideLivingOnExport, setHideLivingOnExport] = useState(false);
+  const [exportPassphrase, setExportPassphrase] = useState('');
+  const [showExportPassphrase, setShowExportPassphrase] = useState(false);
+  const [restorePassphrase, setRestorePassphrase] = useState('');
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
   const [pendingBackupContent, setPendingBackupContent] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -52,18 +55,24 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   };
 
   const handleDownloadFullBackup = async () => {
-    const backupJson = await createFullBackup(data, archives, accessList);
+    const passphrase = showExportPassphrase && exportPassphrase.trim() ? exportPassphrase.trim() : undefined;
+    const backupJson = await createFullBackup(data, archives, accessList, passphrase);
     const blob = new Blob([backupJson], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `genealogor_sauvegarde_complete_${new Date().toISOString().split('T')[0]}.genealogor.json`;
+    const suffix = passphrase ? '.chiffre.genealogor.json' : '.genealogor.json';
+    a.download = `genealogor_sauvegarde_${new Date().toISOString().split('T')[0]}${suffix}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    setStatusMessage('Sauvegarde complète avec intégrité SHA-256 téléchargée.');
+    setStatusMessage(
+      passphrase
+        ? 'Sauvegarde chiffrée AES-GCM 256 bits avec intégrité SHA-256 téléchargée.'
+        : 'Sauvegarde complète avec intégrité SHA-256 téléchargée.'
+    );
   };
 
   const handleBackupFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,6 +84,7 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
       const content = event.target?.result as string;
       if (content) {
         setPendingBackupContent(content);
+        setRestorePassphrase('');
         const preview = await previewBackup(content);
         setBackupPreview(preview);
       }
@@ -82,13 +92,20 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
     reader.readAsText(file);
   };
 
+  const handleDecryptAndPreview = async () => {
+    if (!pendingBackupContent) return;
+    const preview = await previewBackup(pendingBackupContent, restorePassphrase);
+    setBackupPreview(preview);
+  };
+
   const handleConfirmRestore = async () => {
     if (!pendingBackupContent) return;
-    const res = await restoreBackup(pendingBackupContent, data, archives, accessList);
+    const res = await restoreBackup(pendingBackupContent, data, archives, accessList, restorePassphrase);
     if (res.success && res.data) {
       onRestoreBackup(res.data);
       setBackupPreview(null);
       setPendingBackupContent(null);
+      setRestorePassphrase('');
       setStatusMessage('Arbre et archives restaurés avec succès.');
       onClose();
     } else {
@@ -164,11 +181,54 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
               <span>Vérification & Prévisualisation de la Sauvegarde</span>
             </h3>
 
-            {backupPreview.isValid && backupPreview.manifest ? (
+            {backupPreview.isEncrypted && !backupPreview.isValid ? (
+              <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-xl space-y-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-900 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-amber-800" />
+                  <span>Sauvegarde chiffrée AES-GCM 256 bits</span>
+                </div>
+                <p className="text-stone-600">
+                  Cette archive est verrouillée par une phrase secrète. Veuillez saisir le mot de passe pour la déverrouiller et vérifier son intégrité.
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    placeholder="Phrase secrète de la sauvegarde..."
+                    value={restorePassphrase}
+                    onChange={e => setRestorePassphrase(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  {backupPreview.error && backupPreview.error !== 'Cette sauvegarde est protégée par chiffrement AES-GCM. Veuillez saisir la phrase secrète.' && (
+                    <p className="text-rose-600 font-medium">{backupPreview.error}</p>
+                  )}
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      onClick={() => { setBackupPreview(null); setPendingBackupContent(null); }}
+                      className="px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-100 rounded-lg"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={handleDecryptAndPreview}
+                      className="px-4 py-1.5 text-xs font-bold text-white bg-amber-900 hover:bg-amber-950 rounded-lg shadow-sm"
+                    >
+                      Déchiffrer & Contrôler
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : backupPreview.isValid && backupPreview.manifest ? (
               <div className="space-y-3 text-xs">
-                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 font-mono text-[11px] flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
-                  <span>Empreinte SHA-256 vérifiée et intègre.</span>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 font-mono text-[11px] flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>Empreinte SHA-256 vérifiée et intègre.</span>
+                  </div>
+                  {backupPreview.isEncrypted && (
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[10px]">
+                      Chiffré AES-GCM
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-stone-700">
@@ -235,8 +295,30 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
                 <h3 className="text-xs font-bold text-stone-900">Sauvegarde Complète Sécurisée (.genealogor.json)</h3>
               </div>
               <p className="text-xs text-stone-600">
-                Génère un paquet certifié intégrant l'arbre, les relations, les sources, les transcriptions d'archives et une empreinte de contrôle SHA-256.
+                Génère un paquet certifié intégrant l'arbre, les relations, les sources, les photographies et transcriptions d'archives avec empreinte SHA-256.
               </p>
+
+              <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-lg space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-stone-700">
+                  <input
+                    type="checkbox"
+                    checked={showExportPassphrase}
+                    onChange={e => setShowExportPassphrase(e.target.checked)}
+                    className="rounded text-amber-800 focus:ring-amber-700 h-3.5 w-3.5"
+                  />
+                  <span className="font-medium">Chiffrer la sauvegarde avec une phrase secrète (AES-GCM 256 bits)</span>
+                </label>
+                {showExportPassphrase && (
+                  <input
+                    type="password"
+                    placeholder="Saisissez une phrase secrète solide..."
+                    value={exportPassphrase}
+                    onChange={e => setExportPassphrase(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-600"
+                  />
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   onClick={handleDownloadFullBackup}

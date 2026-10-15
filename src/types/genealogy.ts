@@ -50,6 +50,7 @@ export interface Individual {
   dAbovilleNumber?: string;
   generation?: number;
   citations?: SourceCitation[];
+  media?: Array<{ title?: string; file?: string; format?: string }>;
   _unsupportedTags?: Array<{ tag: string; value: string; level: number }>;
 }
 
@@ -62,6 +63,7 @@ export interface Family {
   divorce?: LifeEvent;
   notes?: string[];
   citations?: SourceCitation[];
+  media?: Array<{ title?: string; file?: string; format?: string }>;
   _unsupportedTags?: Array<{ tag: string; value: string; level: number }>;
 }
 
@@ -104,7 +106,9 @@ export interface PhotoTag {
   y: number; // percentage (0 - 100)
   width?: number; // percentage width (optional box, e.g. 10%)
   height?: number; // percentage height (optional box, e.g. 12%)
-  label?: string; // Optional custom description or role (ex: "Assis au centre", "À l'âge de 18 ans")
+  label?: string; // Optional custom description (ex: "Assis au centre", "À l'âge de 18 ans")
+  role?: string; // Rôle ou lien de parenté
+  confidence?: 'certain' | 'probable' | 'uncertain';
   createdAt?: number;
 }
 

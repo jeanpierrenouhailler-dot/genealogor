@@ -23,10 +23,13 @@ class RealtimeClient {
     }
   }
 
-  public init(roomId: string, userName: string = 'Membre de la famille', branch: string = 'all') {
+  private roomToken: string = '';
+
+  public init(roomId: string, userName: string = 'Membre de la famille', branch: string = 'all', roomToken: string = '') {
     this.roomId = roomId;
     this.userName = userName;
     this.branch = branch;
+    this.roomToken = roomToken;
 
     this.connectWs();
   }
@@ -48,6 +51,7 @@ class RealtimeClient {
           clientId: this.clientId,
           userName: this.userName,
           branch: this.branch,
+          roomToken: this.roomToken,
         }));
         this.dispatch('connection:change', { connected: true, isWs: true });
       };

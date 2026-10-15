@@ -12,9 +12,9 @@ export function parseGedcomDate(rawDate?: string): ParsedDate | undefined {
   const raw = rawDate.trim();
   const upper = raw.toUpperCase();
 
-  const isApproximate = upper.includes('ABT') || upper.includes('CAL') || upper.includes('EST') || upper.includes('VERS') || upper.includes('CA');
-  const isBefore = upper.includes('BEF') || upper.includes('AVANT');
-  const isAfter = upper.includes('AFT') || upper.includes('APRES');
+  const isApproximate = upper.includes('ABT') || upper.includes('CAL') || upper.includes('EST') || upper.includes('VERS') || upper.includes('CA') || upper.includes('ENV');
+  const isBefore = upper.includes('BEF') || upper.includes('AVANT') || upper.includes('AV.');
+  const isAfter = upper.includes('AFT') || upper.includes('APRES') || upper.includes('APR.');
   const isBetween = upper.includes('BET') || upper.includes('ENTRE');
 
   // Match 4-digit years
@@ -59,6 +59,7 @@ export function parseGedcom(content: string): GenealogyData {
   let currentFam: Partial<Family> | null = null;
   let currentSource: Partial<GenealogicalSource> | null = null;
   let currentEvent: { target: 'birth' | 'death' | 'baptism' | 'burial' | 'marriage' | 'divorce' | 'residence'; event: LifeEvent } | null = null;
+  let currentMedia: { title?: string; file?: string; format?: string } | null = null;
   let lastTextContainer: { get: () => string; set: (val: string) => void } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -226,28 +227,49 @@ export function parseGedcom(content: string): GenealogyData {
               };
             }
             break;
+          case 'OBJE': {
+            if (!currentIndi.media) currentIndi.media = [];
+            const m = { title: value || undefined };
+            currentIndi.media.push(m);
+            currentMedia = m;
+            break;
+          }
+          case 'SOUR': {
+            if (value) {
+              if (!currentIndi.citations) currentIndi.citations = [];
+              currentIndi.citations.push({ sourceId: value.trim() });
+            }
+            break;
+          }
           default:
             // Preserve unsupported tags without silent data loss
             currentIndi._unsupportedTags?.push({ tag, value, level });
             break;
         }
-      } else if (level === 2 && currentEvent) {
-        if (tag === 'DATE') {
-          currentEvent.event.date = value.trim();
-          currentEvent.event.parsedDate = parseGedcomDate(value.trim());
-        } else if (tag === 'PLAC') {
-          currentEvent.event.place = value.trim();
-        } else if (tag === 'NOTE') {
-          if (!currentEvent.event.notes) currentEvent.event.notes = [];
-          currentEvent.event.notes.push(value.trim());
-          const idx = currentEvent.event.notes.length - 1;
-          lastTextContainer = {
-            get: () => currentEvent!.event.notes![idx],
-            set: (v) => { currentEvent!.event.notes![idx] = v; }
-          };
-        } else if (tag === 'SOUR') {
-          if (!currentEvent.event.citations) currentEvent.event.citations = [];
-          currentEvent.event.citations.push({ sourceId: value.trim() });
+      } else if (level === 2) {
+        if (currentMedia) {
+          if (tag === 'FILE') currentMedia.file = value.trim();
+          else if (tag === 'TITL') currentMedia.title = value.trim();
+          else if (tag === 'FORM') currentMedia.format = value.trim();
+        }
+        if (currentEvent) {
+          if (tag === 'DATE') {
+            currentEvent.event.date = value.trim();
+            currentEvent.event.parsedDate = parseGedcomDate(value.trim());
+          } else if (tag === 'PLAC') {
+            currentEvent.event.place = value.trim();
+          } else if (tag === 'NOTE') {
+            if (!currentEvent.event.notes) currentEvent.event.notes = [];
+            currentEvent.event.notes.push(value.trim());
+            const idx = currentEvent.event.notes.length - 1;
+            lastTextContainer = {
+              get: () => currentEvent!.event.notes![idx],
+              set: (v) => { currentEvent!.event.notes![idx] = v; }
+            };
+          } else if (tag === 'SOUR') {
+            if (!currentEvent.event.citations) currentEvent.event.citations = [];
+            currentEvent.event.citations.push({ sourceId: value.trim() });
+          }
         }
       }
       continue;
@@ -257,6 +279,7 @@ export function parseGedcom(content: string): GenealogyData {
     if (currentFam) {
       if (level === 1) {
         currentEvent = null;
+        currentMedia = null;
         lastTextContainer = null;
         switch (tag) {
           case 'HUSB':
@@ -286,16 +309,37 @@ export function parseGedcom(content: string): GenealogyData {
               };
             }
             break;
+          case 'OBJE': {
+            if (!currentFam.media) currentFam.media = [];
+            const m = { title: value || undefined };
+            currentFam.media.push(m);
+            currentMedia = m;
+            break;
+          }
+          case 'SOUR': {
+            if (value) {
+              if (!currentFam.citations) currentFam.citations = [];
+              currentFam.citations.push({ sourceId: value.trim() });
+            }
+            break;
+          }
           default:
             currentFam._unsupportedTags?.push({ tag, value, level });
             break;
         }
-      } else if (level === 2 && currentEvent) {
-        if (tag === 'DATE') {
-          currentEvent.event.date = value.trim();
-          currentEvent.event.parsedDate = parseGedcomDate(value.trim());
-        } else if (tag === 'PLAC') {
-          currentEvent.event.place = value.trim();
+      } else if (level === 2) {
+        if (currentMedia) {
+          if (tag === 'FILE') currentMedia.file = value.trim();
+          else if (tag === 'TITL') currentMedia.title = value.trim();
+          else if (tag === 'FORM') currentMedia.format = value.trim();
+        }
+        if (currentEvent) {
+          if (tag === 'DATE') {
+            currentEvent.event.date = value.trim();
+            currentEvent.event.parsedDate = parseGedcomDate(value.trim());
+          } else if (tag === 'PLAC') {
+            currentEvent.event.place = value.trim();
+          }
         }
       }
     }
@@ -347,6 +391,8 @@ function finalizeIndividual(partial: Partial<Individual>): Individual {
     notes: partial.notes || [],
     familiesAsSpouse: partial.familiesAsSpouse || [],
     familiesAsChild: partial.familiesAsChild || [],
+    citations: partial.citations || [],
+    media: partial.media || [],
     _unsupportedTags: partial._unsupportedTags || [],
   };
 }
@@ -360,6 +406,8 @@ function finalizeFamily(partial: Partial<Family>): Family {
     marriage: partial.marriage,
     divorce: partial.divorce,
     notes: partial.notes || [],
+    citations: partial.citations || [],
+    media: partial.media || [],
     _unsupportedTags: partial._unsupportedTags || [],
   };
 }
