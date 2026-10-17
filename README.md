@@ -210,7 +210,13 @@ L'application est une SPA (Single Page Application) statique avec compilation op
    - **Build output directory** : `dist`
    - **Node.js version** : `20` ou `22` (paramétrable via la variable `NODE_VERSION=20`)
 3. **Routage SPA** : Le fichier `public/_redirects` est déjà préconfiguré (`/* /index.html 200`) afin que tous les rechargements d'URL et deep-links fonctionnent sans erreur 404.
-4. **Relais Temps Réel & WebSocket** :
+4. **🔑 Autoriser votre domaine dans Firebase Auth (Indispensable pour la Connexion Google)** :
+   - Par mesure de sécurité, Google/Firebase bloque la connexion OAuth depuis tout nouveau domaine non répertorié.
+   - Rendez-vous dans la [Console Firebase (Paramètres d'Authentification)](https://console.firebase.google.com/project/geometric-gift-7f6jr/authentication/settings).
+   - Dans l'onglet **Paramètres** > section **Domaines autorisés**, cliquez sur **Ajouter un domaine**.
+   - Ajoutez votre domaine : `genealogor.swinux.ch` (ou `swinux.ch`, ainsi que votre sous-domaine `*.pages.dev` si vous l'utilisez).
+   - Cliquez sur **Enregistrer**. L'effet est **immédiat** sans avoir besoin de relancer un build.
+5. **Relais Temps Réel & WebSocket** :
    - Si aucun serveur WebSocket n'est configuré, l'application fonctionne parfaitement : Firestore assure la synchronisation temps réel des données (`onSnapshot`), et `BroadcastChannel` synchronise les onglets locaux.
    - Si vous souhaitez activer le relais WebSocket de curseurs/présence, renseignez simplement la variable d'environnement `VITE_WS_URL=wss://votre-relais.com/ws` dans les paramètres Cloudflare Pages.
 

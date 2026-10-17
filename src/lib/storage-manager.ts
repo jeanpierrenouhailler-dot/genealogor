@@ -10,13 +10,17 @@ export interface StorageContainer<T> {
 }
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'offline' | 'conflict' | 'error';
+export type PendingStatus = 'pending' | 'syncing' | 'failed' | 'conflict';
 
 export interface PendingChange {
   id: string;
-  action: 'tree:update' | 'person:edit' | 'archive:add' | 'archive:delete';
+  action: 'tree:update' | 'person:edit' | 'archive:add' | 'archive:delete' | 'access:update';
   payload: any;
   timestamp: number;
   retryCount: number;
+  status: PendingStatus;
+  lastAttempt?: number;
+  error?: string;
 }
 
 export const STORAGE_KEYS = {
@@ -88,17 +92,49 @@ export function getPendingChanges(): PendingChange[] {
   return getVersionedItem<PendingChange[]>(STORAGE_KEYS.PENDING, []).data;
 }
 
-export function addPendingChange(action: PendingChange['action'], payload: any): void {
+export function addPendingChange(
+  action: PendingChange['action'], 
+  payload: any, 
+  customId?: string
+): PendingChange {
   const pending = getPendingChanges();
   const change: PendingChange = {
-    id: 'chg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    id: customId || ('chg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7)),
     action,
     payload,
     timestamp: Date.now(),
     retryCount: 0,
+    status: 'pending',
   };
   pending.push(change);
   setVersionedItem(STORAGE_KEYS.PENDING, pending);
+  return change;
+}
+
+export function updatePendingChange(id: string, updates: Partial<PendingChange>): void {
+  const pending = getPendingChanges();
+  const idx = pending.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    pending[idx] = { ...pending[idx], ...updates };
+    setVersionedItem(STORAGE_KEYS.PENDING, pending);
+  }
+}
+
+export function markPendingChangeFailed(id: string, error?: string): void {
+  const pending = getPendingChanges();
+  const idx = pending.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    const current = pending[idx];
+    const newRetryCount = (current.retryCount || 0) + 1;
+    pending[idx] = {
+      ...current,
+      retryCount: newRetryCount,
+      status: newRetryCount >= 3 ? 'conflict' : 'failed',
+      lastAttempt: Date.now(),
+      error: error || current.error,
+    };
+    setVersionedItem(STORAGE_KEYS.PENDING, pending);
+  }
 }
 
 export function clearPendingChanges(): void {

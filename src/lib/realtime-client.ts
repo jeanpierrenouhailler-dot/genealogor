@@ -24,6 +24,7 @@ class RealtimeClient {
   }
 
   private roomToken: string = '';
+  private pendingAcks: Map<string, { resolve: (val: { success: boolean; error?: string }) => void; timer: any }> = new Map();
 
   public init(roomId: string, userName: string = 'Membre de la famille', branch: string = 'all', roomToken: string = '') {
     this.roomId = roomId;
@@ -60,6 +61,24 @@ class RealtimeClient {
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+
+          // Traitement des accusés de réception du serveur
+          if (msg.type === 'action:ack' && msg.opId) {
+            const handler = this.pendingAcks.get(msg.opId);
+            if (handler) {
+              clearTimeout(handler.timer);
+              this.pendingAcks.delete(msg.opId);
+              if (msg.status === 'success') {
+                handler.resolve({ success: true });
+              } else {
+                handler.resolve({ 
+                  success: false, 
+                  error: msg.message || msg.code || 'Action rejetée par le serveur' 
+                });
+              }
+            }
+          }
+
           this.dispatch(msg.type, msg);
         } catch (e) {
           console.error('WS parse error', e);
@@ -68,6 +87,13 @@ class RealtimeClient {
 
       this.ws.onclose = () => {
         this.isConnected = false;
+        // Rejeter les ACK en attente si la connexion tombe
+        for (const [opId, handler] of this.pendingAcks.entries()) {
+          clearTimeout(handler.timer);
+          handler.resolve({ success: false, error: 'Connexion WebSocket interrompue' });
+        }
+        this.pendingAcks.clear();
+
         this.dispatch('connection:change', { connected: false, isWs: true });
         this.scheduleReconnect();
       };
@@ -91,9 +117,20 @@ class RealtimeClient {
     }, 4000);
   }
 
-  public sendAction(action: string, payload: any) {
+  /**
+   * Envoie une action et attend la validation et l'accusé de réception (ACK) du serveur.
+   */
+  public sendActionWithAck(
+    action: string, 
+    payload: any, 
+    opId?: string, 
+    timeoutMs = 6000
+  ): Promise<{ success: boolean; error?: string }> {
+    const stableId = opId || ('op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
     const message = {
       type: 'sync:action',
+      id: stableId,
+      opId: stableId,
       roomId: this.roomId,
       clientId: this.clientId,
       action,
@@ -101,13 +138,35 @@ class RealtimeClient {
       timestamp: Date.now(),
     };
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    }
-    // Also broadcast to local tabs via BroadcastChannel
+    // Diffusion locale immédiate aux onglets du même navigateur
     if (this.channel) {
       this.channel.postMessage(message);
     }
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ success: false, error: 'Serveur WebSocket hors ligne' });
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingAcks.delete(stableId);
+        resolve({ success: false, error: 'Délai dépassé sans accusé de réception (timeout ACK)' });
+      }, timeoutMs);
+
+      this.pendingAcks.set(stableId, { resolve, timer });
+
+      try {
+        this.ws!.send(JSON.stringify(message));
+      } catch (err: any) {
+        clearTimeout(timer);
+        this.pendingAcks.delete(stableId);
+        resolve({ success: false, error: err?.message || 'Échec de transmission socket' });
+      }
+    });
+  }
+
+  public sendAction(action: string, payload: any) {
+    return this.sendActionWithAck(action, payload);
   }
 
   public sendPresence(activeView?: string, activePersonId?: string) {

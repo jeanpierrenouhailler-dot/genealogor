@@ -1,4 +1,4 @@
-import { GenealogyData, Individual, Family } from '../types/genealogy';
+import { GenealogyData, Individual, Family, ArchiveDocument } from '../types/genealogy';
 import { parseGedcomDate } from './gedcom-parser';
 
 export function getSampleGenealogy(): GenealogyData {
@@ -298,4 +298,21 @@ export function getSampleGenealogy(): GenealogyData {
     rootPersonId: '@I1@',
     sourceHeader: 'Arbre Généalogique de la Famille Martin (Bretagne)',
   };
+}
+
+export function createEmptyGenealogy(title = 'Mon Arbre Généalogique'): GenealogyData {
+  return {
+    individuals: {},
+    families: {},
+    rootPersonId: undefined,
+    sourceHeader: title,
+  };
+}
+
+export function isSampleGenealogy(data?: GenealogyData | null, archives?: ArchiveDocument[] | null): boolean {
+  if (!data) return false;
+  const hasMartinRoot = !!data.individuals?.['@I1@'] && data.individuals['@I1@']?.name?.includes('Martin');
+  const hasMartinFamily = !!data.families?.['@F1@'];
+  const hasSampleArchives = !!archives?.some(a => a.id === 'doc-001' || a.id === 'doc-004');
+  return hasMartinRoot || hasMartinFamily || hasSampleArchives;
 }

@@ -4,12 +4,17 @@ const ARCHIVES_STORAGE_KEY = 'genealogor_archives_v1';
 
 export function getStoredArchives(): ArchiveDocument[] {
   try {
-    const raw = localStorage.getItem(ARCHIVES_STORAGE_KEY);
+    const hasStorage = typeof localStorage !== 'undefined';
+    const isCleared = hasStorage && localStorage.getItem('genealogor_prototype_cleared') === 'true';
+    const raw = hasStorage ? localStorage.getItem(ARCHIVES_STORAGE_KEY) : null;
     if (raw) {
       const parsed: ArchiveDocument[] = JSON.parse(raw);
-      // Ensure default photo document is present if not already added
+      if (isCleared) {
+        return parsed;
+      }
+      // Ensure default photo document is present if not already added and not cleared
       const hasPhoto = parsed.some(d => d.id === 'doc-004' || d.type === 'photo');
-      if (!hasPhoto) {
+      if (!hasPhoto && parsed.length > 0) {
         const defaults = getDefaultArchives();
         const photoDoc = defaults.find(d => d.id === 'doc-004');
         if (photoDoc) {
@@ -19,10 +24,15 @@ export function getStoredArchives(): ArchiveDocument[] {
       }
       return parsed;
     }
+    if (isCleared) {
+      return [];
+    }
   } catch (e) {
     console.error('Erreur lecture archives', e);
   }
-  return getDefaultArchives();
+  return typeof localStorage !== 'undefined' && localStorage.getItem('genealogor_prototype_cleared') === 'true'
+    ? []
+    : getDefaultArchives();
 }
 
 export function saveStoredArchives(archives: ArchiveDocument[]): void {
@@ -30,6 +40,14 @@ export function saveStoredArchives(archives: ArchiveDocument[]): void {
     localStorage.setItem(ARCHIVES_STORAGE_KEY, JSON.stringify(archives));
   } catch (e) {
     console.error('Erreur sauvegarde archives', e);
+  }
+}
+
+export function clearStoredArchives(): void {
+  try {
+    localStorage.setItem(ARCHIVES_STORAGE_KEY, JSON.stringify([]));
+  } catch (e) {
+    console.error('Erreur effacement archives', e);
   }
 }
 

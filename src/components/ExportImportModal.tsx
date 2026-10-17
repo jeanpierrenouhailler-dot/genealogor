@@ -1,9 +1,13 @@
 import React, { useRef, useState } from 'react';
-import { X, Download, Upload, FileText, Database, RotateCcw, Check, ShieldCheck, AlertCircle, Eye, Undo2 } from 'lucide-react';
+import { 
+  X, Download, Upload, FileText, Database, RotateCcw, Check, ShieldCheck, 
+  AlertCircle, Eye, Undo2, Trash2, AlertTriangle, Lock, Key, ShieldAlert, EyeOff 
+} from 'lucide-react';
 import { GenealogyData, ArchiveDocument, BranchAccess } from '../types/genealogy';
 import { serializeGedcomWithReport } from '../lib/gedcom-serializer';
 import { parseGedcom } from '../lib/gedcom-parser';
 import { createFullBackup, previewBackup, restoreBackup, restorePreBackupSafety, BackupPreview } from '../lib/backup-restore';
+import { sanitizeGenealogyDataForPrivacy, sanitizeArchivesForPrivacy, getProtectedPersonIds } from '../lib/privacy';
 
 interface ExportImportModalProps {
   isOpen: boolean;
@@ -14,6 +18,8 @@ interface ExportImportModalProps {
   onLoadGedcom: (newData: GenealogyData) => void;
   onRestoreBackup: (payload: { genealogy: GenealogyData; archives: ArchiveDocument[]; accessList: BranchAccess[] }) => void;
   onResetSample: () => void;
+  onClearPrototype?: () => void;
+  isPrototypeActive?: boolean;
 }
 
 export const ExportImportModal: React.FC<ExportImportModalProps> = ({
@@ -25,19 +31,39 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   onLoadGedcom,
   onRestoreBackup,
   onResetSample,
+  onClearPrototype,
+  isPrototypeActive = false,
 }) => {
   const fileInputGedRef = useRef<HTMLInputElement>(null);
   const fileInputBackupRef = useRef<HTMLInputElement>(null);
 
+  const [applyPrivacyOnBackup, setApplyPrivacyOnBackup] = useState(false);
   const [hideLivingOnExport, setHideLivingOnExport] = useState(false);
+  
+  // États d'export de sauvegarde explicite
+  const [exportMode, setExportMode] = useState<'encrypted' | 'plain'>('encrypted');
   const [exportPassphrase, setExportPassphrase] = useState('');
-  const [showExportPassphrase, setShowExportPassphrase] = useState(false);
+  const [confirmExportPassphrase, setConfirmExportPassphrase] = useState('');
+  const [showPassphraseText, setShowPassphraseText] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
   const [restorePassphrase, setRestorePassphrase] = useState('');
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
   const [pendingBackupContent, setPendingBackupContent] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   if (!isOpen) return null;
+
+  const getEffectiveBackupData = () => {
+    if (!applyPrivacyOnBackup) {
+      return { exportData: data, exportArchives: archives };
+    }
+    const sanitizedTree = sanitizeGenealogyDataForPrivacy(data);
+    const protectedIds = getProtectedPersonIds(data);
+    const sanitizedArch = sanitizeArchivesForPrivacy(archives, protectedIds);
+    return { exportData: sanitizedTree, exportArchives: sanitizedArch };
+  };
 
   const handleDownloadGedcom = () => {
     const { gedcom, report } = serializeGedcomWithReport(data, { hideLiving: hideLivingOnExport });
@@ -54,25 +80,62 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
     setStatusMessage(`GEDCOM exporté avec succès (${report.totalIndividuals} individus, ${report.maskedLivingCount} vivants masqués).`);
   };
 
-  const handleDownloadFullBackup = async () => {
-    const passphrase = showExportPassphrase && exportPassphrase.trim() ? exportPassphrase.trim() : undefined;
-    const backupJson = await createFullBackup(data, archives, accessList, passphrase);
-    const blob = new Blob([backupJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const suffix = passphrase ? '.chiffre.genealogor.json' : '.genealogor.json';
-    a.download = `genealogor_sauvegarde_${new Date().toISOString().split('T')[0]}${suffix}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadEncryptedBackup = async () => {
+    setExportError(null);
+    const pass = exportPassphrase.trim();
+    const confirm = confirmExportPassphrase.trim();
 
-    setStatusMessage(
-      passphrase
-        ? 'Sauvegarde chiffrée AES-GCM 256 bits avec intégrité SHA-256 téléchargée.'
-        : 'Sauvegarde complète avec intégrité SHA-256 téléchargée.'
-    );
+    if (!pass || pass.length < 8) {
+      setExportError('La phrase secrète doit comporter au moins 8 caractères pour garantir la sécurité AES-256.');
+      return;
+    }
+    if (pass !== confirm) {
+      setExportError('La confirmation ne correspond pas à la phrase secrète saisie.');
+      return;
+    }
+
+    try {
+      const { exportData, exportArchives } = getEffectiveBackupData();
+      const backupJson = await createFullBackup(exportData, exportArchives, accessList, pass);
+      const blob = new Blob([backupJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `genealogor_sauvegarde_chiffree_${new Date().toISOString().split('T')[0]}.chiffre.genealogor.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setExportPassphrase('');
+      setConfirmExportPassphrase('');
+      const privacyNotice = applyPrivacyOnBackup ? ' (avec confidentialité vivants appliquée)' : '';
+      setStatusMessage(`Sauvegarde chiffrée de bout en bout (AES-GCM 256 bits + SHA-256)${privacyNotice} téléchargée.`);
+    } catch (e: any) {
+      setExportError('Erreur de chiffrement : ' + (e?.message || 'échec technique.'));
+    }
+  };
+
+  const handleDownloadPlainBackup = async () => {
+    setExportError(null);
+    try {
+      const { exportData, exportArchives } = getEffectiveBackupData();
+      const backupJson = await createFullBackup(exportData, exportArchives, accessList, undefined);
+      const blob = new Blob([backupJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `genealogor_sauvegarde_standard_${new Date().toISOString().split('T')[0]}.genealogor.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const privacyNotice = applyPrivacyOnBackup ? ' (avec confidentialité vivants appliquée)' : '';
+      setStatusMessage(`Sauvegarde standard (JSON clair avec contrôle d'intégrité SHA-256)${privacyNotice} téléchargée.`);
+    } catch (e: any) {
+      setExportError('Erreur d\'export : ' + (e?.message || 'échec technique.'));
+    }
   };
 
   const handleBackupFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,6 +294,34 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
                   )}
                 </div>
 
+                <div className="p-2.5 bg-stone-50 border border-stone-200 rounded-lg space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-stone-800">
+                    <span className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Schéma strict et intégrité relationnelle validés</span>
+                    </span>
+                    <span className="text-stone-500 font-normal">
+                      {backupPreview.validationSummary?.verifiedRelationsCount || 0} liens vérifiés
+                    </span>
+                  </div>
+                  {backupPreview.validationSummary && backupPreview.validationSummary.repairedCrossReferencesCount > 0 && (
+                    <div className="text-[10px] text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200/60">
+                      {backupPreview.validationSummary.repairedCrossReferencesCount} lien(s) réciproque(s) normalisé(s) automatiquement.
+                    </div>
+                  )}
+                  {backupPreview.validationWarnings && backupPreview.validationWarnings.length > 0 && (
+                    <div className="text-[10px] text-stone-600 bg-stone-100 p-1.5 rounded border border-stone-200 space-y-0.5">
+                      <span className="font-semibold text-stone-700 block">Ajustements non-bloquants :</span>
+                      {backupPreview.validationWarnings.slice(0, 3).map((w, idx) => (
+                        <div key={idx} className="truncate">• {w}</div>
+                      ))}
+                      {backupPreview.validationWarnings.length > 3 && (
+                        <div className="text-stone-400 italic">... et {backupPreview.validationWarnings.length - 3} autre(s)</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 text-stone-700">
                   <div className="p-2 bg-stone-50 rounded">
                     <span className="text-stone-400 block text-[10px]">Individus</span>
@@ -288,49 +379,155 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
         ) : (
           <div className="space-y-4">
             
-            {/* Section 1 : Sauvegarde Complète Vérifiable */}
-            <div className="p-4 bg-white border border-stone-200 rounded-xl space-y-2.5 shadow-2xs">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-800" />
-                <h3 className="text-xs font-bold text-stone-900">Sauvegarde Complète Sécurisée (.genealogor.json)</h3>
+            {/* Section 1 : Sauvegardes Complètes (Chiffrée vs Standard) */}
+            <div className="p-4 bg-white border border-stone-200 rounded-xl space-y-3.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-amber-800" />
+                  <h3 className="text-xs font-bold text-stone-900">Sauvegarde Complète de la Base Généalogique</h3>
+                </div>
+                <div className="flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-[11px] font-medium">
+                  <button
+                    type="button"
+                    onClick={() => { setExportMode('encrypted'); setExportError(null); }}
+                    className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                      exportMode === 'encrypted'
+                        ? 'bg-white text-amber-900 font-bold shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <Lock className="w-3 h-3 text-emerald-700" />
+                    <span>Chiffrée (Recommandé)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setExportMode('plain'); setExportError(null); }}
+                    className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                      exportMode === 'plain'
+                        ? 'bg-white text-stone-900 font-bold shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <span>Standard (Non chiffrée)</span>
+                  </button>
+                </div>
               </div>
-              <p className="text-xs text-stone-600">
-                Génère un paquet certifié intégrant l'arbre, les relations, les sources, les photographies et transcriptions d'archives avec empreinte SHA-256.
-              </p>
 
-              <div className="p-2.5 bg-stone-50 border border-stone-200/80 rounded-lg space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-stone-700">
-                  <input
-                    type="checkbox"
-                    checked={showExportPassphrase}
-                    onChange={e => setShowExportPassphrase(e.target.checked)}
-                    className="rounded text-amber-800 focus:ring-amber-700 h-3.5 w-3.5"
-                  />
-                  <span className="font-medium">Chiffrer la sauvegarde avec une phrase secrète (AES-GCM 256 bits)</span>
-                </label>
-                {showExportPassphrase && (
-                  <input
-                    type="password"
-                    placeholder="Saisissez une phrase secrète solide..."
-                    value={exportPassphrase}
-                    onChange={e => setExportPassphrase(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-600"
-                  />
-                )}
-              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-stone-700 bg-stone-50 p-2.5 rounded-lg border border-stone-200/80">
+                <input
+                  type="checkbox"
+                  checked={applyPrivacyOnBackup}
+                  onChange={e => setApplyPrivacyOnBackup(e.target.checked)}
+                  className="rounded text-amber-800 focus:ring-amber-700 h-3.5 w-3.5"
+                />
+                <span className="font-medium">
+                  Appliquer la confidentialité stricte (masquer individus vivants & purger actes contemporains)
+                </span>
+              </label>
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              {exportMode === 'encrypted' ? (
+                <div className="p-3 bg-emerald-50/70 border border-emerald-200/90 rounded-xl space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                      <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                      <span>Chiffrement Authentifié Matériel (AES-256-GCM + PBKDF2)</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-900 leading-relaxed">
+                      L'intégralité de l'arbre, des individus, des actes numérisés et des photographies est chiffrée avec un sel et un vecteur d'initialisation uniques. Seul le titulaire de la phrase secrète pourra déchiffrer ce fichier.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-semibold text-stone-700 uppercase tracking-wider block">
+                        Phrase secrète (8 car. min)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPassphraseText ? 'text' : 'password'}
+                          placeholder="Phrase secrète..."
+                          value={exportPassphrase}
+                          onChange={e => setExportPassphrase(e.target.value)}
+                          className="w-full pl-2.5 pr-8 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassphraseText(!showPassphraseText)}
+                          className="absolute right-2 top-2 text-stone-400 hover:text-stone-700"
+                        >
+                          {showPassphraseText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-semibold text-stone-700 uppercase tracking-wider block">
+                        Confirmer la phrase secrète
+                      </label>
+                      <input
+                        type={showPassphraseText ? 'text' : 'password'}
+                        placeholder="Répéter la phrase..."
+                        value={confirmExportPassphrase}
+                        onChange={e => setConfirmExportPassphrase(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700"
+                      />
+                    </div>
+                  </div>
+
+                  {exportError && (
+                    <div className="p-2 bg-rose-100 border border-rose-300 rounded-lg text-rose-900 text-[11px] flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-700 shrink-0" />
+                      <span>{exportError}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDownloadEncryptedBackup}
+                      className="w-full py-2 px-3 text-xs font-semibold text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Télécharger la sauvegarde chiffrée (.chiffre.genealogor.json)</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50/80 border border-amber-200/90 rounded-xl space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-amber-950 block">
+                        Sauvegarde Standard Non Chiffrée (Texte Clair)
+                      </span>
+                      <p className="text-[11px] text-amber-900 leading-relaxed">
+                        Cette archive stocke les données généalogiques et actes en JSON clair, sans mot de passe.
+                        L'empreinte <strong>SHA-256</strong> intégrée garantit l'intégrité technique contre les corruptions de fichier, mais <strong>n'assure aucune confidentialité</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDownloadPlainBackup}
+                      className="w-full py-2 px-3 text-xs font-semibold text-stone-900 bg-white hover:bg-stone-100 border border-stone-300 rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-800" />
+                      <span>Télécharger la sauvegarde standard (.genealogor.json)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-1 border-t border-stone-100 flex items-center justify-end">
                 <button
-                  onClick={handleDownloadFullBackup}
-                  className="py-2 px-3 text-xs font-semibold text-white bg-amber-900 hover:bg-amber-950 rounded-lg shadow-sm transition-all"
-                >
-                  Télécharger la sauvegarde
-                </button>
-                <button
+                  type="button"
                   onClick={() => fileInputBackupRef.current?.click()}
-                  className="py-2 px-3 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors border border-stone-200"
+                  className="px-3 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors border border-stone-300 flex items-center gap-1.5"
                 >
-                  Restaurer une sauvegarde
+                  <Upload className="w-3.5 h-3.5 text-stone-600" />
+                  <span>Restaurer une sauvegarde (chiffrée ou standard)</span>
                 </button>
                 <input
                   ref={fileInputBackupRef}
@@ -382,28 +579,99 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
               </div>
             </div>
 
-            {/* Section 3 : Outils de Récupération & Démonstration */}
-            <div className="pt-2 flex items-center justify-between text-xs text-stone-500">
-              <button
-                onClick={handleUndoRestore}
-                className="text-stone-600 hover:text-amber-900 flex items-center gap-1.5"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-                <span>Annuler dernière restauration</span>
-              </button>
+            {/* Section 3 : Gestion du Prototype & Arbre Vierge */}
+            <div className="pt-2 border-t border-stone-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-serif font-bold text-stone-900 uppercase tracking-wider">
+                  Données du Prototype & Réinitialisation
+                </span>
+                {isPrototypeActive && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-semibold border border-amber-300">
+                    Arbre exemple actif
+                  </span>
+                )}
+              </div>
 
-              <button
-                onClick={() => {
-                  if (confirm('Restaurer l\'arbre exemple de la famille Martin ?')) {
-                    onResetSample();
-                    onClose();
-                  }
-                }}
-                className="text-stone-500 hover:text-amber-900 flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Restaurer l'arbre d'exemple</span>
-              </button>
+              {/* Panneau d'effacement complet du prototype */}
+              {showClearConfirm ? (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3 text-xs text-rose-950 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2 font-bold text-rose-900">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Confirmer l'effacement de l'arbre exemple et du prototype</span>
+                  </div>
+                  <p className="text-stone-700 leading-relaxed text-[11px]">
+                    Cette action va <strong>effacer définitivement</strong> la famille Martin (individus et familles), les 4 actes et photographies d'archives de test, ainsi que les clés de partage de démonstration. L'espace redeviendra un <strong>arbre vierge</strong> prêt pour votre propre généalogie.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onClearPrototype) {
+                          onClearPrototype();
+                          setShowClearConfirm(false);
+                          onClose();
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Oui, tout effacer (arbre vierge)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowClearConfirm(false)}
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 font-medium rounded-lg text-xs transition-colors"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-semibold text-stone-800 block">
+                      Effacer l'arbre exemple & données du prototype
+                    </span>
+                    <span className="text-[11px] text-stone-500 block">
+                      Supprime les personnes et actes de test pour démarrer un arbre entièrement vierge.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowClearConfirm(true)}
+                    className="shrink-0 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition-all flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Effacer le prototype</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Raccourcis complémentaires */}
+              <div className="flex items-center justify-between text-xs text-stone-500 pt-1">
+                <button
+                  type="button"
+                  onClick={handleUndoRestore}
+                  className="text-stone-600 hover:text-amber-900 flex items-center gap-1.5 transition-colors"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span>Annuler dernière restauration</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Restaurer l\'arbre exemple de la famille Martin (données de démonstration) ?')) {
+                      onResetSample();
+                      onClose();
+                    }
+                  }}
+                  className="text-stone-500 hover:text-amber-900 flex items-center gap-1.5 transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Recharger l'arbre d'exemple Martin</span>
+                </button>
+              </div>
             </div>
 
           </div>

@@ -141,8 +141,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ data, onSelectPerson
       </div>
 
       {/* Vertical Timeline */}
-      <div className="relative pl-6 md:pl-8 border-l-2 border-stone-300/80 space-y-6 py-2">
-        {filteredEvents.map((event, idx) => {
+      {filteredEvents.length === 0 ? (
+        <div className="p-8 text-center bg-white border border-dashed border-stone-200 rounded-2xl text-xs text-stone-500">
+          Aucun événement familial à afficher pour le moment. L'arbre est vierge ou aucun événement ne correspond à ce filtre.
+        </div>
+      ) : (
+        <div className="relative pl-6 md:pl-8 border-l-2 border-stone-300/80 space-y-6 py-2">
+          {filteredEvents.map((event, idx) => {
           const isHistorical = event.type === 'historical';
 
           return (
@@ -204,6 +209,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ data, onSelectPerson
           );
         })}
       </div>
+      )}
 
     </div>
   );

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, Lock, Link, Copy, Check, Shield, Users, Eye, Edit3, Trash2, Key } from 'lucide-react';
 import { BranchAccess, BranchRole, BranchScope, GenealogyData } from '../types/genealogy';
-import { hashPassword, generateShareToken } from '../lib/crypto';
+import { hashPassword } from '../lib/crypto';
+import { signRoomToken } from '../lib/token-auth';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -37,17 +38,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = generateShareToken();
-    let pwdHash = '';
-    if (password.trim()) {
-      pwdHash = await hashPassword(password.trim());
-    }
-
     const defaultName = branch === 'paternal' 
       ? 'Branche Paternelle (Cousins côté père)' 
       : branch === 'maternal' 
         ? 'Branche Maternelle (Cousins côté mère)' 
         : 'Famille Élargie (Arbre complet)';
+
+    const token = signRoomToken({
+      roomId,
+      role,
+      branch,
+      exp: 0,
+      iat: Date.now(),
+      sub: accessName.trim() || defaultName,
+    });
+
+    let pwdHash = '';
+    if (password.trim()) {
+      pwdHash = await hashPassword(password.trim());
+    }
 
     const newAccess: BranchAccess = {
       id: 'acc-' + Date.now(),

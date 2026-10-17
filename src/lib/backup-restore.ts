@@ -1,6 +1,9 @@
 import { GenealogyData, ArchiveDocument, BranchAccess } from '../types/genealogy';
 import { STORAGE_KEYS } from './storage-manager';
 import { encryptData, decryptData } from './crypto';
+import { validateBackupPayload, BackupValidationSummary, BACKUP_LIMITS } from './backup-validation';
+
+export { BACKUP_LIMITS };
 
 export interface BackupManifest {
   format: 'genealogor-backup-v2' | 'genealogor-backup-v2-encrypted';
@@ -38,6 +41,8 @@ export interface BackupPreview {
     latestYear?: number;
     sampleSurnames: string[];
   };
+  validationSummary?: BackupValidationSummary;
+  validationWarnings?: string[];
 }
 
 async function computeChecksum(str: string): Promise<string> {
@@ -58,8 +63,8 @@ export async function createFullBackup(
   accessList: BranchAccess[],
   passphrase?: string
 ): Promise<string> {
-  const individuals = Object.values(genealogy.individuals);
-  const families = Object.values(genealogy.families);
+  const individuals = Object.values(genealogy.individuals || {});
+  const families = Object.values(genealogy.families || {});
 
   const payload = {
     genealogy,
@@ -105,15 +110,26 @@ export async function createFullBackup(
 }
 
 /**
- * Prévisualise et valide l'intégrité d'une sauvegarde avant restauration.
- * Détecte les sauvegardes chiffrées et gère la phrase secrète.
+ * Prévisualise et valide l'intégrité et la conformité d'une sauvegarde avant restauration :
+ * - Détecte les sauvegardes chiffrées et vérifie la phrase secrète AES-GCM.
+ * - Contrôle formel de l'empreinte SHA-256.
+ * - Validation stricte du schéma de données et limites de taille (50 Mo, 50 000 individus).
+ * - Contrôle de la cohérence relationnelle (références croisées individus, familles, archives).
  */
 export async function previewBackup(jsonContent: string, passphrase?: string): Promise<BackupPreview> {
   try {
+    // 1. Limite de taille brute
+    if (jsonContent.length > BACKUP_LIMITS.MAX_FILE_BYTES) {
+      return {
+        isValid: false,
+        error: `Fichier de sauvegarde trop volumineux (${Math.round(jsonContent.length / (1024 * 1024))} Mo). Limite autorisée : 50 Mo.`,
+      };
+    }
+
     const parsed = JSON.parse(jsonContent);
 
     if (!parsed || typeof parsed !== 'object' || !parsed.manifest) {
-      return { isValid: false, error: 'Structure de fichier de sauvegarde non reconnue.' };
+      return { isValid: false, error: 'Structure de fichier de sauvegarde non reconnue (manifeste manquant).' };
     }
 
     const { manifest } = parsed as BackupPackage;
@@ -126,7 +142,7 @@ export async function previewBackup(jsonContent: string, passphrase?: string): P
       return { isValid: false, error: 'Format de sauvegarde non compatible.' };
     }
 
-    // Gestion du chiffrement
+    // 2. Gestion du déchiffrement
     let payload = parsed.payload;
 
     if (manifest.format === 'genealogor-backup-v2-encrypted' || parsed.encryptedPayload) {
@@ -156,7 +172,7 @@ export async function previewBackup(jsonContent: string, passphrase?: string): P
       return { isValid: false, error: 'Contenu de la sauvegarde manquant ou inaccessible.' };
     }
 
-    // Vérifier l'empreinte de contrôle (checksum SHA-256)
+    // 3. Contrôle d'intégrité cryptographique SHA-256
     const payloadString = JSON.stringify(payload);
     const calculatedChecksum = await computeChecksum(payloadString);
 
@@ -164,6 +180,20 @@ export async function previewBackup(jsonContent: string, passphrase?: string): P
       return {
         isValid: false,
         error: 'Échec du contrôle d\'intégrité SHA-256 : le fichier a été altéré ou est incomplet.',
+      };
+    }
+
+    // 4. Validation stricte du schéma et des relations croisées
+    const validation = validateBackupPayload(payload, jsonContent.length);
+    if (!validation.isValid) {
+      const allErrors = [...validation.schemaErrors, ...validation.integrityErrors];
+      return {
+        isValid: false,
+        isEncrypted: manifest.isEncrypted || Boolean(parsed.encryptedPayload),
+        manifest,
+        error: `Validation stricte échouée : ${allErrors.join(' | ')}`,
+        validationSummary: validation.summary,
+        validationWarnings: validation.warnings,
       };
     }
 
@@ -195,15 +225,17 @@ export async function previewBackup(jsonContent: string, passphrase?: string): P
         latestYear,
         sampleSurnames: Array.from(surnames).slice(0, 5),
       },
+      validationSummary: validation.summary,
+      validationWarnings: validation.warnings,
     };
   } catch (err) {
-    return { isValid: false, error: 'Fichier JSON invalide ou illisible.' };
+    return { isValid: false, error: 'Fichier JSON invalide ou corrompu.' };
   }
 }
 
 /**
- * Restaure une sauvegarde en créant au préalable une copie de secours de l'arbre courant
- * pour permettre un retour arrière immédiat en cas d'erreur.
+ * Restaure une sauvegarde en effectuant une validation stricte, en normalisant
+ * les références croisées et en créant au préalable une copie de secours de l'arbre courant.
  */
 export async function restoreBackup(
   jsonContent: string,
@@ -211,10 +243,33 @@ export async function restoreBackup(
   currentArchives: ArchiveDocument[],
   currentAccess: BranchAccess[],
   passphrase?: string
-): Promise<{ success: boolean; data?: NonNullable<BackupPackage['payload']>; error?: string }> {
+): Promise<{ 
+  success: boolean; 
+  data?: NonNullable<BackupPackage['payload']>; 
+  error?: string;
+  warnings?: string[];
+}> {
   const preview = await previewBackup(jsonContent, passphrase);
   if (!preview.isValid || !preview.manifest) {
     return { success: false, error: preview.error || 'Sauvegarde invalide' };
+  }
+
+  let rawPayload: any;
+  const parsed = JSON.parse(jsonContent) as BackupPackage;
+  if (parsed.encryptedPayload) {
+    const decryptedStr = await decryptData(parsed.encryptedPayload, passphrase!.trim());
+    rawPayload = JSON.parse(decryptedStr);
+  } else {
+    rawPayload = parsed.payload;
+  }
+
+  // Validation et nettoyage strict avant injection
+  const validation = validateBackupPayload(rawPayload, jsonContent.length);
+  if (!validation.isValid || !validation.sanitizedPayload) {
+    return {
+      success: false,
+      error: `Erreur critique lors de la vérification préalable à l'écriture : ${validation.schemaErrors.concat(validation.integrityErrors).join(' ')}`,
+    };
   }
 
   // Créer la sauvegarde pré-restauration de sécurité
@@ -227,18 +282,10 @@ export async function restoreBackup(
     }
   }
 
-  const parsed = JSON.parse(jsonContent) as BackupPackage;
-  if (parsed.encryptedPayload) {
-    const decryptedStr = await decryptData(parsed.encryptedPayload, passphrase!.trim());
-    return {
-      success: true,
-      data: JSON.parse(decryptedStr),
-    };
-  }
-
   return {
     success: true,
-    data: parsed.payload!,
+    data: validation.sanitizedPayload,
+    warnings: validation.warnings,
   };
 }
 

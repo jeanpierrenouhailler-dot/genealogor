@@ -15,6 +15,8 @@ interface ProfileViewProps {
   onEditPerson: (person: Individual) => void;
   onOpenArchives: () => void;
   onSelectArchive: (archiveId: string) => void;
+  onAddNewPerson?: () => void;
+  onOpenImportModal?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -25,8 +27,47 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onEditPerson,
   onOpenArchives,
   onSelectArchive,
+  onAddNewPerson,
+  onOpenImportModal,
 }) => {
   const person = data.individuals[personId] || Object.values(data.individuals)[0];
+
+  if (!person) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="bg-white border border-stone-200 rounded-2xl p-8 sm:p-12 shadow-xs space-y-5">
+          <div className="w-14 h-14 mx-auto bg-amber-50 text-amber-900 border border-amber-200/80 rounded-2xl flex items-center justify-center">
+            <User className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="font-serif text-xl font-bold text-stone-900">Aucune fiche individuelle</h3>
+            <p className="text-xs sm:text-sm text-stone-600">
+              L'arbre généalogique est actuellement vierge. Ajoutez une personne ou importez un fichier GEDCOM pour consulter et enrichir vos fiches individuelles.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            {onAddNewPerson && (
+              <button
+                onClick={onAddNewPerson}
+                className="px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors"
+              >
+                + Créer la première personne
+              </button>
+            )}
+            {onOpenImportModal && (
+              <button
+                onClick={onOpenImportModal}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-xl border border-stone-300 transition-colors"
+              >
+                Importer un GEDCOM
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const sosaMap = computeSosaNumbers(data);
   const sosa = sosaMap[person.id];
 

@@ -94,6 +94,37 @@ export async function deleteArchiveFromFirestore(
   }
 }
 
+export async function clearTreeFromFirestore(
+  treeId: string, 
+  currentUser: User | null
+): Promise<void> {
+  if (!currentUser) return;
+  const path = `trees/${treeId}`;
+  try {
+    const treeRef = doc(db, 'trees', treeId);
+    await setDoc(treeRef, {
+      treeId,
+      ownerId: currentUser.uid,
+      ownerEmail: currentUser.email || '',
+      title: 'Mon Arbre Généalogique',
+      rootPersonId: '',
+      individuals: {},
+      families: {},
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Supprimer les actes de démonstration de la sous-collection archives
+    const sampleDocIds = ['doc-001', 'doc-002', 'doc-003', 'doc-004'];
+    for (const id of sampleDocIds) {
+      try {
+        await deleteDoc(doc(db, 'trees', treeId, 'archives', id));
+      } catch (e) {}
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export function subscribeToArchives(
   treeId: string, 
   onUpdate: (archives: ArchiveDocument[]) => void
@@ -106,9 +137,7 @@ export function subscribeToArchives(
     snapshot.forEach(docSnap => {
       list.push(docSnap.data() as ArchiveDocument);
     });
-    if (list.length > 0) {
-      onUpdate(list);
-    }
+    onUpdate(list);
   }, (error) => {
     handleFirestoreError(error, OperationType.LIST, path);
   });

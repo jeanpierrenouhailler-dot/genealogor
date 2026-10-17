@@ -101,37 +101,43 @@ export const GeoMapView: React.FC<GeoMapViewProps> = ({ data, onSelectPerson }) 
           </h2>
 
           <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-            {sortedPlaces.map(place => {
-              const isSelected = place.name === (activePlace?.name);
+            {sortedPlaces.length === 0 ? (
+              <div className="p-8 text-center bg-white rounded-xl border border-dashed border-stone-200 text-xs text-stone-500">
+                Aucun lieu répertorié dans l'arbre pour le moment.
+              </div>
+            ) : (
+              sortedPlaces.map(place => {
+                const isSelected = place.name === (activePlace?.name);
 
-              return (
-                <div
-                  key={place.name}
-                  onClick={() => setSelectedPlaceName(place.name)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-left ${
-                    isSelected
-                      ? 'bg-amber-50/80 border-amber-800 shadow-xs ring-1 ring-amber-800'
-                      : 'bg-white border-stone-200 hover:border-stone-400 hover:bg-stone-50/50'
-                  }`}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${isSelected ? 'text-amber-800' : 'text-stone-400'}`} />
-                    <div>
-                      <h3 className="font-serif text-sm font-semibold text-stone-900">
-                        {place.name.split(',')[0]}
-                      </h3>
-                      <span className="text-xs text-stone-500 block truncate max-w-[220px]">
-                        {place.name.split(',').slice(1).join(',')}
-                      </span>
+                return (
+                  <div
+                    key={place.name}
+                    onClick={() => setSelectedPlaceName(place.name)}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-left ${
+                      isSelected
+                        ? 'bg-amber-50/80 border-amber-800 shadow-xs ring-1 ring-amber-800'
+                        : 'bg-white border-stone-200 hover:border-stone-400 hover:bg-stone-50/50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${isSelected ? 'text-amber-800' : 'text-stone-400'}`} />
+                      <div>
+                        <h3 className="font-serif text-sm font-semibold text-stone-900">
+                          {place.name.split(',')[0]}
+                        </h3>
+                        <span className="text-xs text-stone-500 block truncate max-w-[220px]">
+                          {place.name.split(',').slice(1).join(',')}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-stone-100 text-stone-800 shrink-0">
-                    {place.count} acte(s)
-                  </span>
-                </div>
-              );
-            })}
+                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-stone-100 text-stone-800 shrink-0">
+                      {place.count} acte(s)
+                    </span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 

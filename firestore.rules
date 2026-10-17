@@ -78,11 +78,9 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
-    // Family trees collection
+      // Family trees collection
     match /trees/{treeId} {
-      allow get: if isSignedIn() && (
-        resource == null || canReadTree(resource.data)
-      );
+      allow get: if isSignedIn() && resource != null && canReadTree(resource.data);
       allow list: if isSignedIn() && (
         isAdmin() ||
         resource.data.ownerId == request.auth.uid ||
@@ -105,20 +103,29 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(treeId)
         && (isTreeOwner(resource.data) || isAdmin());
 
-      // Archives subcollection: inherits permission from parent tree
+      // Archives subcollection: requires parent tree to exist and reader/editor permissions
       match /archives/{archiveId} {
-        allow get: if isSignedIn() && (!treeExists(treeId) || canReadTree(getTree(treeId)));
-        allow list: if isSignedIn() && (!treeExists(treeId) || canReadTree(getTree(treeId)));
-        allow create, update, delete: if isValidId(archiveId) && isSignedIn()
-          && (!treeExists(treeId) ? isAdmin() : isTreeEditor(getTree(treeId)));
+        allow get, list: if isSignedIn()
+          && treeExists(treeId)
+          && canReadTree(getTree(treeId));
+
+        allow create, update, delete: if isValidId(archiveId)
+          && isSignedIn()
+          && treeExists(treeId)
+          && (isTreeEditor(getTree(treeId)) || isAdmin());
       }
 
-      // Access rules subcollection: only tree owner can manage access permissions
+      // Access rules subcollection: strictly restricted to tree owner or admin
+      // Viewers and non-owners are denied read access to avoid leaking tokens or passphrases
       match /access/{accessId} {
-        allow get: if isSignedIn() && (!treeExists(treeId) || canReadTree(getTree(treeId)));
-        allow list: if isSignedIn() && (!treeExists(treeId) || canReadTree(getTree(treeId)));
-        allow create, update, delete: if isValidId(accessId) && isSignedIn()
-          && (!treeExists(treeId) ? isAdmin() : isTreeOwner(getTree(treeId)));
+        allow get, list: if isSignedIn()
+          && treeExists(treeId)
+          && (isTreeOwner(getTree(treeId)) || isAdmin());
+
+        allow create, update, delete: if isValidId(accessId)
+          && isSignedIn()
+          && treeExists(treeId)
+          && (isTreeOwner(getTree(treeId)) || isAdmin());
       }
     }
   }

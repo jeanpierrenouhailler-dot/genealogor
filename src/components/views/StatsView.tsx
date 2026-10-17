@@ -11,6 +11,23 @@ interface StatsViewProps {
 export const StatsView: React.FC<StatsViewProps> = ({ data, archiveCount }) => {
   const individuals = Object.values(data.individuals);
   const families = Object.values(data.families);
+
+  if (individuals.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-16 text-center">
+        <div className="bg-white border border-stone-200 rounded-2xl p-8 sm:p-12 shadow-xs space-y-4">
+          <div className="w-14 h-14 mx-auto bg-amber-50 text-amber-900 border border-amber-200/80 rounded-2xl flex items-center justify-center">
+            <BarChart3 className="w-7 h-7" />
+          </div>
+          <h3 className="font-serif text-xl font-bold text-stone-900">Aucune statistique disponible</h3>
+          <p className="text-xs sm:text-sm text-stone-600">
+            L'arbre généalogique est actuellement vierge. Les indicateurs de longévité, démographie et répartition des patronymes s'afficheront dès vos premières saisies.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const anomalies = validateChronology(data);
 
   const maleCount = individuals.filter(i => i.sex === 'M').length;

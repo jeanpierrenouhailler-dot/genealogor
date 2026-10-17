@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Users, User, ChevronRight, ChevronDown, Award, 
   MapPin, Calendar, FileText, Search, ZoomIn, ZoomOut, RotateCcw,
-  Sparkles, ShieldCheck
+  Sparkles, ShieldCheck, UserPlus, Upload, GitFork
 } from 'lucide-react';
 import { GenealogyData, Individual } from '../../types/genealogy';
 import { computeSosaNumbers } from '../../lib/sosa-aboville';
@@ -14,6 +14,9 @@ interface TreeViewProps {
   onViewProfile: (id: string) => void;
   onViewArchives?: (personId: string) => void;
   archiveCountByPerson?: Record<string, number>;
+  onAddNewPerson?: () => void;
+  onOpenImportModal?: () => void;
+  onResetSample?: () => void;
 }
 
 export const TreeView: React.FC<TreeViewProps> = ({
@@ -23,13 +26,16 @@ export const TreeView: React.FC<TreeViewProps> = ({
   onViewProfile,
   onViewArchives,
   archiveCountByPerson = {},
+  onAddNewPerson,
+  onOpenImportModal,
+  onResetSample,
 }) => {
   const [treeMode, setTreeMode] = useState<'ancestors' | 'descendants'>('ancestors');
   const [generationsCount, setGenerationsCount] = useState<number>(4);
   const [searchFilter, setSearchFilter] = useState('');
 
   const currentPerson = data.individuals[selectedPersonId] || Object.values(data.individuals)[0];
-  const sosaMap = computeSosaNumbers(data, selectedPersonId);
+  const sosaMap = currentPerson ? computeSosaNumbers(data, selectedPersonId) : {};
 
   // Search individuals
   const filteredIndividuals = searchFilter.trim()
@@ -167,6 +173,62 @@ export const TreeView: React.FC<TreeViewProps> = ({
     );
   };
 
+  // Écran d'accueil pour arbre vierge (suite à l'effacement du prototype)
+  if (!currentPerson || Object.keys(data.individuals).length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 md:px-8 py-12">
+        <div className="bg-white border border-stone-200/90 rounded-2xl p-8 sm:p-12 text-center shadow-xs space-y-6">
+          <div className="w-16 h-16 mx-auto bg-amber-50 text-amber-900 border border-amber-200/80 rounded-2xl flex items-center justify-center shadow-xs">
+            <GitFork className="w-8 h-8 text-amber-800" />
+          </div>
+
+          <div className="space-y-2 max-w-lg mx-auto">
+            <h2 className="font-serif text-2xl font-bold text-stone-900">
+              Votre arbre généalogique est vierge
+            </h2>
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              Toutes les données du prototype ont été effacées. Votre base généalogique est prête à accueillir vos propres ancêtres :
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            {onOpenImportModal && (
+              <button
+                onClick={onOpenImportModal}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Importer un fichier GEDCOM (.ged)</span>
+              </button>
+            )}
+
+            {onAddNewPerson && (
+              <button
+                onClick={onAddNewPerson}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-xl border border-stone-300 transition-all"
+              >
+                <UserPlus className="w-4 h-4 text-amber-800" />
+                <span>Créer la première personne</span>
+              </button>
+            )}
+          </div>
+
+          {onResetSample && (
+            <div className="pt-6 border-t border-stone-100 flex items-center justify-center text-xs text-stone-500">
+              <button
+                onClick={onResetSample}
+                className="hover:text-amber-900 flex items-center gap-1.5 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Recharger l'arbre exemple Martin (démonstration)</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
       
@@ -197,6 +259,16 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
         {/* Quick search & Controls */}
         <div className="flex items-center gap-3 flex-wrap">
+          {onAddNewPerson && (
+            <button
+              onClick={onAddNewPerson}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Ajouter une personne</span>
+            </button>
+          )}
+
           <div className="relative w-56">
             <input
               type="text"

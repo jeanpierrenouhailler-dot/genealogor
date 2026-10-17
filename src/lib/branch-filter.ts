@@ -1,5 +1,12 @@
-import { GenealogyData, Individual, BranchScope } from '../types/genealogy';
-import { shouldProtectPerson, sanitizePersonForPrivacy, isLiving, DEFAULT_PRIVACY_POLICY } from './privacy';
+import { GenealogyData, Individual, Family, BranchScope } from '../types/genealogy';
+import { 
+  shouldProtectPerson, 
+  sanitizePersonForPrivacy, 
+  sanitizeFamilyForPrivacy,
+  getProtectedPersonIds,
+  isLiving, 
+  DEFAULT_PRIVACY_POLICY 
+} from './privacy';
 
 export { isLiving };
 
@@ -92,18 +99,23 @@ export function filterGenealogyData(
     }
   }
 
-  // Filter families where at least one member is visible
-  const filteredFamilies: Record<string, any> = {};
+  const protectedIds = hideLiving ? getProtectedPersonIds(data, privacyPolicy) : new Set<string>();
+
+  // Filter families where at least one member is visible and sanitize if involving protected persons
+  const filteredFamilies: Record<string, Family> = {};
   for (const [fId, fam] of Object.entries(data.families)) {
     const husbVisible = fam.husbandId && allowedIds.has(fam.husbandId);
     const wifeVisible = fam.wifeId && allowedIds.has(fam.wifeId);
     const anyChildVisible = fam.childrenIds.some(cid => allowedIds.has(cid));
 
     if (husbVisible || wifeVisible || anyChildVisible) {
-      filteredFamilies[fId] = {
+      const trimmedFamily: Family = {
         ...fam,
         childrenIds: fam.childrenIds.filter(cid => allowedIds.has(cid)),
       };
+      filteredFamilies[fId] = hideLiving 
+        ? sanitizeFamilyForPrivacy(trimmedFamily, protectedIds, privacyPolicy)
+        : trimmedFamily;
     }
   }
 

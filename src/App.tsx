@@ -13,26 +13,41 @@ import { MergeModal } from './components/views/MergeModal';
 import { PassphraseScreen } from './components/PassphraseScreen';
 
 import { GenealogyData, Individual, ArchiveDocument, BranchAccess, BranchRole, BranchScope } from './types/genealogy';
-import { getSampleGenealogy } from './lib/sample-data';
-import { getStoredArchives, saveStoredArchives } from './lib/archive-store';
+import { getSampleGenealogy, createEmptyGenealogy, isSampleGenealogy } from './lib/sample-data';
+import { getStoredArchives, saveStoredArchives, clearStoredArchives, getDefaultArchives } from './lib/archive-store';
 import { filterGenealogyData } from './lib/branch-filter';
 import { realtimeClient } from './lib/realtime-client';
 import { verifyPassword } from './lib/crypto';
 import { validateChronology } from './lib/validation';
+import { 
+  sanitizePersonForPrivacy, 
+  sanitizeGenealogyDataForPrivacy, 
+  sanitizeArchivesForPrivacy, 
+  getProtectedPersonIds,
+  shouldProtectPerson 
+} from './lib/privacy';
 import { 
   STORAGE_KEYS, 
   setVersionedItem, 
   getVersionedItem, 
   addPendingChange, 
   getPendingChanges, 
-  clearPendingChanges 
+  clearPendingChanges,
+  updatePendingChange,
+  markPendingChangeFailed,
+  removePendingChange
 } from './lib/storage-manager';
+import { signRoomToken } from './lib/token-auth';
 import { 
   auth, 
   loginWithGoogle, 
   logoutUser, 
-  testFirestoreConnection 
+  testFirestoreConnection,
+  firebaseProjectId,
+  checkRedirectAuth
 } from './lib/firebase';
+import { AuthErrorModal, AuthErrorInfo } from './components/AuthErrorModal';
+
 import { 
   saveTreeToFirestore, 
   subscribeToTree, 
@@ -40,25 +55,30 @@ import {
   deleteArchiveFromFirestore, 
   subscribeToArchives, 
   saveAccessToFirestore, 
-  subscribeToAccessList 
+  subscribeToAccessList,
+  clearTreeFromFirestore
 } from './lib/firestore-sync';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { Shield, Sparkles, Database, GitMerge, AlertTriangle } from 'lucide-react';
+import { Shield, Sparkles, Database, GitMerge, AlertTriangle, Trash2 } from 'lucide-react';
 
 export default function App() {
   // Main state with versioned storage & recovery
   const [data, setData] = useState<GenealogyData>(() => {
-    const res = getVersionedItem<GenealogyData>(STORAGE_KEYS.TREE, getSampleGenealogy());
+    const isCleared = typeof window !== 'undefined' && localStorage.getItem('genealogor_prototype_cleared') === 'true';
+    const fallback = isCleared ? createEmptyGenealogy() : getSampleGenealogy();
+    const res = getVersionedItem<GenealogyData>(STORAGE_KEYS.TREE, fallback);
     return res.data;
   });
 
   const [archives, setArchives] = useState<ArchiveDocument[]>(() => {
-    const res = getVersionedItem<ArchiveDocument[]>(STORAGE_KEYS.ARCHIVES, getStoredArchives());
+    const isCleared = typeof window !== 'undefined' && localStorage.getItem('genealogor_prototype_cleared') === 'true';
+    const fallback = isCleared ? [] : getStoredArchives();
+    const res = getVersionedItem<ArchiveDocument[]>(STORAGE_KEYS.ARCHIVES, fallback);
     return res.data;
   });
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('tree');
-  const [selectedPersonId, setSelectedPersonId] = useState<string>(() => data.rootPersonId || Object.keys(data.individuals)[0]);
+  const [selectedPersonId, setSelectedPersonId] = useState<string>(() => data.rootPersonId || Object.keys(data.individuals)[0] || '');
   const [selectedArchiveId, setSelectedArchiveId] = useState<string>('');
 
   // Firebase Auth & Cloud Sync state
@@ -88,6 +108,7 @@ export default function App() {
   const [connectedPeerCount, setConnectedPeerCount] = useState<number>(1);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<AuthErrorInfo | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -97,10 +118,27 @@ export default function App() {
   // Chronological anomalies detection
   const anomalies = useMemo(() => validateChronology(data), [data]);
 
+  // Détection si les données actuelles correspondent au prototype de démonstration
+  const isPrototypeActive = useMemo(() => isSampleGenealogy(data, archives), [data, archives]);
+
   // 1. Initialize Firebase Auth and Connection Verification
   useEffect(() => {
     testFirestoreConnection().then(ok => {
       if (ok) setIsCloudSynced(true);
+    });
+
+    // Check if coming back from a redirect Google sign-in
+    checkRedirectAuth().catch((err: any) => {
+      console.warn('Redirect sign-in error:', err);
+      const code = err?.code || 'auth/unknown';
+      if (code === 'auth/unauthorized-domain' || code === 'auth/popup-blocked') {
+        setAuthError({
+          code,
+          message: err?.message || 'Erreur d’authentification.',
+          currentDomain: window.location.hostname,
+          firebaseProjectId,
+        });
+      }
     });
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -195,7 +233,19 @@ export default function App() {
   // 4. Initialize Real-time WebSocket connection
   useEffect(() => {
     const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const currentToken = urlParams?.get('token') || pendingBranchAccess?.shareToken || '';
+    let currentToken = urlParams?.get('token') || pendingBranchAccess?.shareToken || '';
+
+    // Si aucun jeton d'invitation n'est fourni, générer un jeton cryptographique signé pour la session active
+    if (!currentToken) {
+      currentToken = signRoomToken({
+        roomId,
+        role: userRole,
+        branch: currentBranchScope,
+        exp: 0,
+        iat: Date.now(),
+        sub: currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : 'Membre'),
+      });
+    }
 
     realtimeClient.init(
       roomId, 
@@ -204,17 +254,41 @@ export default function App() {
       currentToken
     );
 
-    const unsubConn = realtimeClient.on('connection:change', (info) => {
+    const unsubConn = realtimeClient.on('connection:change', async (info) => {
       setIsWsConnected(info.connected);
       if (info.connected) {
-        // Traiter les modifications en attente hors ligne
+        // P1 : Traitement résilient des modifications en attente avec acquittement ACK individuel
         const pending = getPendingChanges();
         if (pending.length > 0) {
-          pending.forEach(change => {
-            realtimeClient.sendAction(change.action, change.payload);
-          });
-          clearPendingChanges();
-          showToast(`${pending.length} modification(s) hors-ligne synchronisée(s).`);
+          let syncedCount = 0;
+          for (const change of pending) {
+            // Éviter de renvoyer en boucle si déjà en conflit
+            if (change.retryCount >= 3) continue;
+
+            updatePendingChange(change.id, { status: 'syncing', lastAttempt: Date.now() });
+            const res = await realtimeClient.sendActionWithAck(change.action, change.payload, change.id);
+            if (res.success) {
+              removePendingChange(change.id);
+              syncedCount++;
+            } else {
+              markPendingChangeFailed(change.id, res.error);
+              console.warn(`Échec de confirmation pour la modification ${change.id}:`, res.error);
+            }
+          }
+
+          if (syncedCount > 0) {
+            showToast(`${syncedCount} modification(s) hors-ligne synchronisée(s) et acquittée(s).`);
+          }
+
+          // Persistance Firestore traitée comme un canal distinct du simple relais WebSocket
+          if (currentUser) {
+            try {
+              await saveTreeToFirestore(roomId, data, currentUser);
+              setIsCloudSynced(true);
+            } catch (e) {
+              console.warn('Persistance Firestore en arrière-plan:', e);
+            }
+          }
         }
       }
     });
@@ -234,11 +308,17 @@ export default function App() {
 
     const unsubSync = realtimeClient.on('sync:action', (msg) => {
       if (msg.action === 'tree:update' && msg.payload) {
-        setData(msg.payload);
-        setVersionedItem(STORAGE_KEYS.TREE, msg.payload);
+        const payloadData = userRole === 'viewer'
+          ? sanitizeGenealogyDataForPrivacy(msg.payload)
+          : msg.payload;
+        setData(payloadData);
+        setVersionedItem(STORAGE_KEYS.TREE, payloadData);
         showToast('Arbre généalogique synchronisé en direct.');
       } else if (msg.action === 'person:edit' && msg.payload) {
-        const updatedInd = msg.payload as Individual;
+        let updatedInd = msg.payload as Individual;
+        if (userRole === 'viewer' && shouldProtectPerson(updatedInd)) {
+          updatedInd = sanitizePersonForPrivacy(updatedInd);
+        }
         setData(prev => {
           const next = {
             ...prev,
@@ -250,6 +330,11 @@ export default function App() {
         showToast(`Fiche de ${updatedInd.name} mise à jour en direct.`);
       } else if (msg.action === 'archive:add' && msg.payload) {
         const newArchive = msg.payload as ArchiveDocument;
+        if (userRole === 'viewer') {
+          const protectedIds = getProtectedPersonIds(data);
+          const sanitizedList = sanitizeArchivesForPrivacy([newArchive], protectedIds);
+          if (sanitizedList.length === 0) return; // Ne pas intégrer l'archive privée
+        }
         setArchives(prev => {
           const next = [newArchive, ...prev.filter(a => a.id !== newArchive.id)];
           setVersionedItem(STORAGE_KEYS.ARCHIVES, next);
@@ -271,9 +356,38 @@ export default function App() {
   // Auth Handlers
   const handleLogin = async () => {
     try {
+      setAuthError(null);
       await loginWithGoogle();
-    } catch (e) {
-      showToast('Connexion Google annulée ou impossible.');
+    } catch (e: any) {
+      console.error('Erreur connexion Google:', e);
+      const code = e?.code || 'auth/unknown';
+      const msg = e?.message || 'Erreur inconnue';
+
+      // Unauthorized domain, popup blocked, or other configuration error
+      if (
+        code === 'auth/unauthorized-domain' || 
+        code === 'auth/popup-blocked' || 
+        code === 'auth/operation-not-allowed' ||
+        code === 'auth/internal-error'
+      ) {
+        setAuthError({
+          code,
+          message: msg,
+          currentDomain: window.location.hostname,
+          firebaseProjectId,
+        });
+      } else if (code === 'auth/popup-closed-by-user') {
+        showToast('Connexion annulée : la fenêtre Google a été fermée.');
+      } else {
+        // Show detailed toast
+        showToast(`Erreur (${code}) : vérifiez la configuration Google.`);
+        setAuthError({
+          code,
+          message: msg,
+          currentDomain: window.location.hostname,
+          firebaseProjectId,
+        });
+      }
     }
   };
 
@@ -307,20 +421,31 @@ export default function App() {
     return false;
   };
 
-  // Branch filtering: get active tree data for current viewer
+  // Branch & privacy filtering: get active tree data for current viewer
   const effectiveData = useMemo(() => {
-    if (currentBranchScope === 'all') return data;
-    return filterGenealogyData(data, data.rootPersonId || Object.keys(data.individuals)[0], currentBranchScope, true);
-  }, [data, currentBranchScope]);
+    const rootId = data.rootPersonId || Object.keys(data.individuals)[0] || '';
+    if (userRole === 'admin' && currentBranchScope === 'all') {
+      return data;
+    }
+    const hideLiving = userRole !== 'admin';
+    return filterGenealogyData(data, rootId, currentBranchScope, hideLiving);
+  }, [data, currentBranchScope, userRole]);
 
-  // Branch filtering: get active archives matching the visible individuals
+  // Branch & privacy filtering: get active archives matching visible individuals and privacy rules
   const effectiveArchives = useMemo(() => {
-    if (currentBranchScope === 'all') return archives;
-    const allowedIds = new Set(Object.keys(effectiveData.individuals));
-    return archives.filter(arc =>
-      arc.linkedPersonIds.length === 0 || arc.linkedPersonIds.some(id => allowedIds.has(id))
-    );
-  }, [archives, currentBranchScope, effectiveData]);
+    let active = archives;
+    if (currentBranchScope !== 'all') {
+      const allowedIds = new Set(Object.keys(effectiveData.individuals));
+      active = archives.filter(arc =>
+        arc.linkedPersonIds.length === 0 || arc.linkedPersonIds.some(id => allowedIds.has(id))
+      );
+    }
+    if (userRole !== 'admin') {
+      const protectedIds = getProtectedPersonIds(data);
+      return sanitizeArchivesForPrivacy(active, protectedIds);
+    }
+    return active;
+  }, [archives, currentBranchScope, effectiveData, userRole, data]);
 
   // Archive count per person
   const archiveCountByPerson = useMemo(() => {
@@ -338,9 +463,11 @@ export default function App() {
     const nextData = {
       ...data,
       individuals: { ...data.individuals, [updated.id]: updated },
+      rootPersonId: data.rootPersonId || updated.id,
     };
     setData(nextData);
     setVersionedItem(STORAGE_KEYS.TREE, nextData);
+    setSelectedPersonId(updated.id);
 
     // Broadcast via WebSocket
     realtimeClient.sendAction('person:edit', updated);
@@ -446,18 +573,79 @@ export default function App() {
     showToast('Sauvegarde complète restaurée avec succès.');
   };
 
+  const handleCreateNewPerson = () => {
+    const existingIds = Object.keys(data.individuals);
+    let nextNum = 1;
+    while (existingIds.includes(`@I${nextNum}@`)) {
+      nextNum++;
+    }
+    const newPerson: Individual = {
+      id: `@I${nextNum}@`,
+      name: 'Nouveau Membre',
+      sex: 'M',
+      familiesAsChild: [],
+      familiesAsSpouse: [],
+      notes: [],
+    };
+    setEditingPerson(newPerson);
+  };
+
+  const handleClearPrototype = async () => {
+    const emptyTree = createEmptyGenealogy('Mon Arbre Généalogique');
+    const emptyArchives: ArchiveDocument[] = [];
+    const emptyAccess: BranchAccess[] = [];
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('genealogor_prototype_cleared', 'true');
+    }
+
+    setData(emptyTree);
+    setArchives(emptyArchives);
+    setAccessList(emptyAccess);
+    setSelectedPersonId('');
+    setSelectedArchiveId('');
+
+    setVersionedItem(STORAGE_KEYS.TREE, emptyTree);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, emptyArchives);
+    setVersionedItem(STORAGE_KEYS.ACCESS, emptyAccess);
+    clearStoredArchives();
+
+    realtimeClient.sendAction('tree:update', emptyTree);
+
+    try {
+      await clearTreeFromFirestore(roomId, currentUser);
+    } catch (e) {
+      console.warn('Erreur Firestore lors de la réinitialisation', e);
+    }
+
+    showToast('Toutes les données du prototype ont été effacées. Arbre vierge prêt.');
+  };
+
   const handleResetSample = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('genealogor_prototype_cleared');
+    }
     const sample = getSampleGenealogy();
+    const defaultArchives = getDefaultArchives();
+
     setData(sample);
+    setArchives(defaultArchives);
     setVersionedItem(STORAGE_KEYS.TREE, sample);
-    setSelectedPersonId(sample.rootPersonId || Object.keys(sample.individuals)[0]);
+    setVersionedItem(STORAGE_KEYS.ARCHIVES, defaultArchives);
+    saveStoredArchives(defaultArchives);
+
+    const rootId = sample.rootPersonId || Object.keys(sample.individuals)[0] || '';
+    setSelectedPersonId(rootId);
     realtimeClient.sendAction('tree:update', sample);
 
     try {
       await saveTreeToFirestore(roomId, sample, currentUser);
+      for (const docItem of defaultArchives) {
+        await saveArchiveToFirestore(roomId, docItem, currentUser);
+      }
     } catch (e) {}
 
-    showToast('Arbre de démonstration restauré.');
+    showToast('Arbre de démonstration (Famille Martin) rechargé.');
   };
 
   const handleAddAccessRule = async (newAcc: BranchAccess) => {
@@ -502,7 +690,29 @@ export default function App() {
         onLogin={handleLogin}
         onLogout={handleLogout}
         isCloudSynced={isCloudSynced}
+        isPrototypeActive={isPrototypeActive}
       />
+
+      {/* Prototype active banner with quick erase action */}
+      {isPrototypeActive && (
+        <div className="bg-amber-50/90 border-b border-amber-200/90 px-4 md:px-8 py-2 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200 text-amber-900 uppercase tracking-wide">
+              Mode Démonstration
+            </span>
+            <span className="text-amber-900">
+              Vous visualisez actuellement l'arbre d'exemple (Famille Martin & actes de test).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsExportModalOpen(true)}
+            className="text-xs font-semibold text-rose-800 hover:text-rose-950 underline hover:no-underline flex items-center gap-1 cursor-pointer"
+          >
+            Effacer toutes les données du prototype →
+          </button>
+        </div>
+      )}
 
       {/* Anomalies alert bar if any detected */}
       {anomalies.length > 0 && activeTab === 'tree' && (
@@ -538,6 +748,9 @@ export default function App() {
               setActiveTab('archives');
             }}
             archiveCountByPerson={archiveCountByPerson}
+            onAddNewPerson={handleCreateNewPerson}
+            onOpenImportModal={() => setIsExportModalOpen(true)}
+            onResetSample={handleResetSample}
           />
         )}
 
@@ -553,6 +766,8 @@ export default function App() {
               setSelectedArchiveId(docId);
               setActiveTab('archives');
             }}
+            onAddNewPerson={handleCreateNewPerson}
+            onOpenImportModal={() => setIsExportModalOpen(true)}
           />
         )}
 
@@ -653,6 +868,8 @@ export default function App() {
         onLoadGedcom={handleLoadGedcom}
         onRestoreBackup={handleRestoreBackup}
         onResetSample={handleResetSample}
+        onClearPrototype={handleClearPrototype}
+        isPrototypeActive={isPrototypeActive}
       />
 
       {/* Merge Duplicates Modal */}
@@ -678,6 +895,18 @@ export default function App() {
         onClose={() => setEditingPerson(null)}
         onSave={handleUpdatePerson}
       />
+
+      {/* Auth Error Diagnostic Modal */}
+      {authError && (
+        <AuthErrorModal
+          errorInfo={authError}
+          onClose={() => setAuthError(null)}
+          onSuccess={() => {
+            setAuthError(null);
+            showToast('Connexion Google réussie !');
+          }}
+        />
+      )}
 
       {/* Footer */}
       <footer className="border-t border-stone-200/80 bg-stone-100/60 py-4 px-6 text-center text-xs text-stone-500 font-mono">

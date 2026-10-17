@@ -1,5 +1,5 @@
 import { GenealogyData, Individual, Family } from '../types/genealogy';
-import { shouldProtectPerson, sanitizePersonForPrivacy } from './privacy';
+import { shouldProtectPerson, sanitizePersonForPrivacy, sanitizeFamilyForPrivacy, getProtectedPersonIds } from './privacy';
 
 export interface GedcomExportOptions {
   hideLiving?: boolean;
@@ -129,8 +129,10 @@ export function serializeGedcomWithReport(data: GenealogyData, options: GedcomEx
   }
 
   // Families
+  const protectedIds = hideLiving ? getProtectedPersonIds(data) : new Set<string>();
   const famList = Object.values(data.families);
-  for (const fam of famList) {
+  for (const rawFam of famList) {
+    const fam = hideLiving ? sanitizeFamilyForPrivacy(rawFam, protectedIds) : rawFam;
     lines.push(`0 ${fam.id} FAM`);
     if (fam.husbandId) lines.push(`1 HUSB ${fam.husbandId}`);
     if (fam.wifeId) lines.push(`1 WIFE ${fam.wifeId}`);

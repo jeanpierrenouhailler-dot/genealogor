@@ -22,12 +22,14 @@ interface NavbarProps {
   onLogin: () => void;
   onLogout: () => void;
   isCloudSynced: boolean;
+  isPrototypeActive?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onTabChange,
   onOpenShareModal,
+  onOpenExportModal,
   currentAccess,
   userRole,
   connectedPeerCount,
@@ -37,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogin,
   onLogout,
   isCloudSynced,
+  isPrototypeActive = false,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#FBF9F5]/95 backdrop-blur-md border-b border-stone-200/80 px-4 md:px-8 py-3 transition-colors">
@@ -55,6 +58,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentAccess?.branch === 'paternal' ? '· Branche Paternelle' : currentAccess?.branch === 'maternal' ? '· Branche Maternelle' : ''}
             </span>
           </button>
+
+          {isPrototypeActive && (
+            <button
+              type="button"
+              onClick={onOpenExportModal}
+              title="Cliquez pour effacer ou exporter les données du prototype"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition-colors cursor-pointer"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+              <span>Arbre exemple</span>
+              <span className="text-amber-800 underline text-[10px] ml-0.5 font-normal hover:text-amber-950">Effacer</span>
+            </button>
+          )}
         </div>
 
         {/* Zone 2: Navigation Links (single-line whitespace-nowrap) */}

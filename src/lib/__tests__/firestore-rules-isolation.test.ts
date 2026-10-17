@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * Modélisation formelle et validation unitaire des règles de sécurité Firestore
- * définies dans /firestore.rules (ABAC & isolation multi-locataires étanche).
+ * définies dans /firestore.rules (ABAC, isolation multi-locataires, interdiction des orphelins).
  */
 
 interface AuthContext {
@@ -31,8 +31,25 @@ function isAdmin(auth: AuthContext | null): boolean {
   return isSignedIn(auth) && auth!.token.email === ADMIN_EMAIL && auth!.token.email_verified === true;
 }
 
-function canReadTree(auth: AuthContext | null, tree: TreeDoc): boolean {
+function isTreeOwner(auth: AuthContext | null, tree: TreeDoc): boolean {
   if (!isSignedIn(auth)) return false;
+  return (
+    isAdmin(auth) ||
+    tree.ownerId === auth!.uid ||
+    (tree.ownerEmail !== undefined && tree.ownerEmail === auth!.token.email)
+  );
+}
+
+function isTreeEditor(auth: AuthContext | null, tree: TreeDoc): boolean {
+  if (!isSignedIn(auth)) return false;
+  return (
+    isTreeOwner(auth, tree) ||
+    (tree.editors !== undefined && tree.editors.includes(auth!.uid))
+  );
+}
+
+function canReadTree(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
   return (
     isAdmin(auth) ||
     tree.ownerId === auth!.uid ||
@@ -43,27 +60,38 @@ function canReadTree(auth: AuthContext | null, tree: TreeDoc): boolean {
   );
 }
 
-function canWriteTree(auth: AuthContext | null, tree: TreeDoc): boolean {
-  if (!isSignedIn(auth)) return false;
-  return (
-    isAdmin(auth) ||
-    tree.ownerId === auth!.uid ||
-    (tree.ownerEmail !== undefined && tree.ownerEmail === auth!.token.email) ||
-    (tree.editors !== undefined && tree.editors.includes(auth!.uid))
-  );
+function canWriteTree(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  return isTreeEditor(auth, tree);
 }
 
-function canDeleteTree(auth: AuthContext | null, tree: TreeDoc): boolean {
-  if (!isSignedIn(auth)) return false;
-  return isAdmin(auth) || tree.ownerId === auth!.uid;
+function canDeleteTree(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  return isTreeOwner(auth, tree);
 }
 
-function canManageAccessRules(auth: AuthContext | null, tree: TreeDoc): boolean {
-  if (!isSignedIn(auth)) return false;
-  return isAdmin(auth) || tree.ownerId === auth!.uid;
+function canReadArchives(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  return canReadTree(auth, tree, treeExists);
 }
 
-describe('Contrôle des Règles de Sécurité Firestore (P0 - Isolation Multi-Familles)', () => {
+function canWriteArchives(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  return isTreeEditor(auth, tree);
+}
+
+function canReadAccessRules(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  // Les règles d'accès contiennent les clés et tokens sensibles : réservé STRICTEMENT au propriétaire ou admin
+  return isTreeOwner(auth, tree);
+}
+
+function canWriteAccessRules(auth: AuthContext | null, tree: TreeDoc | null, treeExists: boolean): boolean {
+  if (!isSignedIn(auth) || !treeExists || !tree) return false;
+  return isTreeOwner(auth, tree);
+}
+
+describe('Contrôle des Règles de Sécurité Firestore (P0 - Isolation & Contrôles Stricts)', () => {
   const ownerUser: AuthContext = {
     uid: 'user-famille-martin-uid',
     token: { email: 'martin@example.com', email_verified: true },
@@ -72,6 +100,11 @@ describe('Contrôle des Règles de Sécurité Firestore (P0 - Isolation Multi-Fa
   const otherUser: AuthContext = {
     uid: 'user-famille-durand-uid',
     token: { email: 'durand@example.com', email_verified: true },
+  };
+
+  const viewerUser: AuthContext = {
+    uid: 'user-cousin-lecteur-uid',
+    token: { email: 'lecteur@example.com', email_verified: true },
   };
 
   const editorUser: AuthContext = {
@@ -88,52 +121,114 @@ describe('Contrôle des Règles de Sécurité Firestore (P0 - Isolation Multi-Fa
     ownerId: 'user-famille-martin-uid',
     ownerEmail: 'martin@example.com',
     editors: ['user-cousin-editeur-uid'],
-    viewers: [],
+    viewers: ['user-cousin-lecteur-uid'],
     isPublic: false,
   };
 
-  it('interdit rigoureusement tout accès en lecture et écriture aux utilisateurs non authentifiés', () => {
-    expect(canReadTree(null, privateMartinTree)).toBe(false);
-    expect(canWriteTree(null, privateMartinTree)).toBe(false);
-    expect(canDeleteTree(null, privateMartinTree)).toBe(false);
-    expect(canManageAccessRules(null, privateMartinTree)).toBe(false);
+  describe('1. Utilisateur non authentifié ou extérieur', () => {
+    it('refuse tout accès à un utilisateur non connecté', () => {
+      expect(canReadTree(null, privateMartinTree, true)).toBe(false);
+      expect(canWriteTree(null, privateMartinTree, true)).toBe(false);
+      expect(canDeleteTree(null, privateMartinTree, true)).toBe(false);
+      expect(canReadArchives(null, privateMartinTree, true)).toBe(false);
+      expect(canWriteArchives(null, privateMartinTree, true)).toBe(false);
+      expect(canReadAccessRules(null, privateMartinTree, true)).toBe(false);
+      expect(canWriteAccessRules(null, privateMartinTree, true)).toBe(false);
+    });
+
+    it('refuse tout accès à un utilisateur tiers connecté mais extérieur', () => {
+      expect(canReadTree(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteTree(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canDeleteTree(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canReadArchives(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteArchives(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canReadAccessRules(otherUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteAccessRules(otherUser, privateMartinTree, true)).toBe(false);
+    });
   });
 
-  it('interdit formellement à un utilisateur d\'une autre famille de lire l\'arbre privé d\'autrui', () => {
-    expect(canReadTree(otherUser, privateMartinTree)).toBe(false);
+  describe('2. Rôle Lecteur (Viewer)', () => {
+    it('autorise le lecteur à lire l’arbre et les archives, mais lui interdit toute écriture', () => {
+      expect(canReadTree(viewerUser, privateMartinTree, true)).toBe(true);
+      expect(canReadArchives(viewerUser, privateMartinTree, true)).toBe(true);
+
+      expect(canWriteTree(viewerUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteArchives(viewerUser, privateMartinTree, true)).toBe(false);
+      expect(canDeleteTree(viewerUser, privateMartinTree, true)).toBe(false);
+    });
+
+    it('interdit rigoureusement au lecteur de lire les documents de la collection access (protection des jetons)', () => {
+      expect(canReadAccessRules(viewerUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteAccessRules(viewerUser, privateMartinTree, true)).toBe(false);
+    });
   });
 
-  it('interdit formellement à un utilisateur d\'une autre famille de modifier ou supprimer l\'arbre d\'autrui', () => {
-    expect(canWriteTree(otherUser, privateMartinTree)).toBe(false);
-    expect(canDeleteTree(otherUser, privateMartinTree)).toBe(false);
-    expect(canManageAccessRules(otherUser, privateMartinTree)).toBe(false);
+  describe('3. Rôle Éditeur (Editor)', () => {
+    it('autorise l’éditeur à lire et modifier l’arbre et les archives', () => {
+      expect(canReadTree(editorUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteTree(editorUser, privateMartinTree, true)).toBe(true);
+      expect(canReadArchives(editorUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteArchives(editorUser, privateMartinTree, true)).toBe(true);
+    });
+
+    it('interdit à l’éditeur de supprimer l’arbre ou de lire/gérer les règles d’accès', () => {
+      expect(canDeleteTree(editorUser, privateMartinTree, true)).toBe(false);
+      expect(canReadAccessRules(editorUser, privateMartinTree, true)).toBe(false);
+      expect(canWriteAccessRules(editorUser, privateMartinTree, true)).toBe(false);
+    });
   });
 
-  it('autorise le propriétaire légitime à lire, modifier et supprimer son arbre ainsi que gérer les accès', () => {
-    expect(canReadTree(ownerUser, privateMartinTree)).toBe(true);
-    expect(canWriteTree(ownerUser, privateMartinTree)).toBe(true);
-    expect(canDeleteTree(ownerUser, privateMartinTree)).toBe(true);
-    expect(canManageAccessRules(ownerUser, privateMartinTree)).toBe(true);
+  describe('4. Rôle Propriétaire (Owner)', () => {
+    it('donne tous les droits au propriétaire sur son arbre, ses archives et ses règles d’accès', () => {
+      expect(canReadTree(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteTree(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canDeleteTree(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canReadArchives(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteArchives(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canReadAccessRules(ownerUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteAccessRules(ownerUser, privateMartinTree, true)).toBe(true);
+    });
   });
 
-  it('autorise un éditeur déclaré à enrichir l\'arbre sans pouvoir le supprimer ni en modifier les droits administrateur', () => {
-    expect(canReadTree(editorUser, privateMartinTree)).toBe(true);
-    expect(canWriteTree(editorUser, privateMartinTree)).toBe(true);
-    // Seul le propriétaire ou admin peut supprimer l'arbre ou gérer les règles d'accès racine
-    expect(canDeleteTree(editorUser, privateMartinTree)).toBe(false);
-    expect(canManageAccessRules(editorUser, privateMartinTree)).toBe(false);
+  describe('5. Rôle Administrateur (Admin)', () => {
+    it('autorise l’administrateur à superviser l’ensemble des ressources', () => {
+      expect(canReadTree(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteTree(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canDeleteTree(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canReadArchives(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteArchives(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canReadAccessRules(adminUser, privateMartinTree, true)).toBe(true);
+      expect(canWriteAccessRules(adminUser, privateMartinTree, true)).toBe(true);
+    });
   });
 
-  it('permet à l\'administrateur système d\'effectuer les opérations de maintenance de secours', () => {
-    expect(canReadTree(adminUser, privateMartinTree)).toBe(true);
-    expect(canWriteTree(adminUser, privateMartinTree)).toBe(true);
-    expect(canDeleteTree(adminUser, privateMartinTree)).toBe(true);
-  });
+  describe('6. Arbre Inexistant et Sous-collections Orphelines (Exigence P0)', () => {
+    it('refuse toute lecture ou écriture si l’arbre parent n’existe pas (treeExists = false)', () => {
+      const nonExistentTree = null;
+      const treeExists = false;
 
-  it('autorise la lecture d\'un arbre uniquement lorsqu\'il est explicitement configuré public', () => {
-    const publicTree: TreeDoc = { ...privateMartinTree, isPublic: true };
-    expect(canReadTree(otherUser, publicTree)).toBe(true);
-    // Même si public, les écritures restent strictement interdites aux tiers
-    expect(canWriteTree(otherUser, publicTree)).toBe(false);
+      // Lecteur
+      expect(canReadArchives(viewerUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canWriteArchives(viewerUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canReadAccessRules(viewerUser, nonExistentTree, treeExists)).toBe(false);
+
+      // Éditeur
+      expect(canReadArchives(editorUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canWriteArchives(editorUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canReadAccessRules(editorUser, nonExistentTree, treeExists)).toBe(false);
+
+      // Tiers extérieur
+      expect(canReadArchives(otherUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canWriteArchives(otherUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canReadAccessRules(otherUser, nonExistentTree, treeExists)).toBe(false);
+      expect(canWriteAccessRules(otherUser, nonExistentTree, treeExists)).toBe(false);
+    });
+
+    it('interdit l’accès aux sous-collections orphelines même pour un utilisateur authentifié', () => {
+      expect(canReadArchives(ownerUser, null, false)).toBe(false);
+      expect(canWriteArchives(ownerUser, null, false)).toBe(false);
+      expect(canReadAccessRules(ownerUser, null, false)).toBe(false);
+      expect(canWriteAccessRules(ownerUser, null, false)).toBe(false);
+    });
   });
 });
