@@ -211,3 +211,76 @@ export function generateShareToken(): string {
   crypto.getRandomValues(array);
   return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+export interface PassphraseQualityResult {
+  score: number; // 0 à 4
+  level: 'too_short' | 'weak' | 'medium' | 'strong';
+  label: string;
+  isAcceptable: boolean;
+  feedback?: string;
+}
+
+/**
+ * Évalue rigoureusement la qualité d'une phrase secrète de chiffrement :
+ * - Rejette les phrases trop courtes (< 8 caractères).
+ * - Détecte et rejette les phrases communes ou triviales (azerty, password, 12345678, etc.).
+ * - Évalue la diversité (longueur >= 12, mélange minuscules/majuscules, chiffres, symboles).
+ */
+export function evaluatePassphraseQuality(passphrase: string): PassphraseQualityResult {
+  const trimmed = passphrase.trim();
+  if (trimmed.length < 8) {
+    return {
+      score: 0,
+      level: 'too_short',
+      label: 'Trop courte (< 8 car.)',
+      isAcceptable: false,
+      feedback: 'La phrase secrète doit comporter au moins 8 caractères.',
+    };
+  }
+
+  const trivialList = new Set([
+    'password', '12345678', '123456789', 'azerty123', 'admin123', 
+    'motdepasse', 'genealogie', 'famille123', 'secret123', 'qwerty123'
+  ]);
+
+  if (trivialList.has(trimmed.toLowerCase())) {
+    return {
+      score: 1,
+      level: 'weak',
+      label: 'Trop triviale',
+      isAcceptable: false,
+      feedback: 'Cette phrase secrète est trop commune et prévisible. Choisissez une phrase plus complexe.',
+    };
+  }
+
+  let score = 1;
+  if (trimmed.length >= 12) score++;
+  if (/[0-9]/.test(trimmed) && /[a-zA-Z]/.test(trimmed)) score++;
+  if (/[^a-zA-Z0-9]/.test(trimmed)) score++;
+
+  if (score >= 3) {
+    return {
+      score,
+      level: 'strong',
+      label: 'Robuste (recommandée)',
+      isAcceptable: true,
+    };
+  } else if (score === 2) {
+    return {
+      score,
+      level: 'medium',
+      label: 'Moyenne (acceptable)',
+      isAcceptable: true,
+      feedback: 'Conseil : ajoutez des symboles ou allongez la phrase pour une protection maximale.',
+    };
+  } else {
+    return {
+      score,
+      level: 'weak',
+      label: 'Faible',
+      isAcceptable: false,
+      feedback: 'Ajoutez des chiffres et des symboles pour renforcer la sécurité.',
+    };
+  }
+}
+

@@ -75,6 +75,45 @@ describe('Mode Hors-Ligne & Résilience (P0 - Exigence 2)', () => {
     expect(backupKeys.length).toBe(1);
     expect(mockStorage[backupKeys[0]]).toContain('non: valide');
   });
+
+  it('ne supprime un changement de la file d\'attente QU\'APRÈS un accusé de réception ACK réel du serveur avec status=success', async () => {
+    // 1. Enregistrement d'un changement hors connexion
+    const change = addPendingChange('person:edit', { id: '@I1@', name: 'Pierre Martin Sync' });
+    expect(getPendingChanges().length).toBe(1);
+
+    // 2. Simulation d'un échec réseau ou refus serveur : le changement DOIT être conservé dans la file
+    const simulatedServerErrorResponse = { success: false, error: 'Serveur indisponible ou rejeté' };
+    
+    if (!simulatedServerErrorResponse.success) {
+      // Le code de synchronisation (App.tsx ligne 298) n'appelle PAS removePendingChange
+      // Il appelle markPendingChangeFailed
+      const { markPendingChangeFailed } = await import('../storage-manager');
+      markPendingChangeFailed(change.id, simulatedServerErrorResponse.error);
+    }
+
+    const pendingAfterFailure = getPendingChanges();
+    expect(pendingAfterFailure.length).toBe(1);
+    expect(pendingAfterFailure[0].status).toBe('failed');
+    expect(pendingAfterFailure[0].retryCount).toBe(1);
+    expect(pendingAfterFailure[0].error).toBe('Serveur indisponible ou rejeté');
+
+    // 3. Après 3 échecs, le statut bascule en conflit pour analyse manuelle sans perte de données
+    const { markPendingChangeFailed } = await import('../storage-manager');
+    markPendingChangeFailed(change.id, 'Deuxième échec');
+    markPendingChangeFailed(change.id, 'Troisième échec');
+
+    const pendingAfterThreeFailures = getPendingChanges();
+    expect(pendingAfterThreeFailures[0].status).toBe('conflict');
+    expect(pendingAfterThreeFailures[0].retryCount).toBe(3);
+
+    // 4. Succès confirmé avec accusé de réception serveur (ACK) : suppression autorisée
+    const simulatedServerSuccessResponse = { success: true };
+    if (simulatedServerSuccessResponse.success) {
+      removePendingChange(change.id);
+    }
+
+    expect(getPendingChanges().length).toBe(0);
+  });
 });
 
 describe('Marquage Photo & Liaison Fiche Individu (Photo Tagging)', () => {

@@ -201,4 +201,66 @@ describe('Sauvegarde et Restauration Complète (P0 - Exigence 4.3)', () => {
     expect(result.data?.archives.length).toBe(sampleArchives.length);
     expect(result.data?.accessList.length).toBe(sampleAccess.length);
   });
+
+  describe('Qualité de la phrase secrète & Traitement des erreurs de chiffrement', () => {
+    it('évalue rigoureusement la force de la phrase secrète et rejette les phrases faibles ou triviales', async () => {
+      const { evaluatePassphraseQuality } = await import('../crypto');
+
+      // Trop courte (< 8 car.)
+      const shortRes = evaluatePassphraseQuality('court');
+      expect(shortRes.isAcceptable).toBe(false);
+      expect(shortRes.level).toBe('too_short');
+
+      // Triviales courantes (dictionnaire commun)
+      const trivialRes = evaluatePassphraseQuality('12345678');
+      expect(trivialRes.isAcceptable).toBe(false);
+      expect(trivialRes.level).toBe('weak');
+
+      const azertyRes = evaluatePassphraseQuality('azerty123');
+      expect(azertyRes.isAcceptable).toBe(false);
+
+      // Moyenne (8+ car. avec lettres et chiffres)
+      const mediumRes = evaluatePassphraseQuality('FamilleMartin2026');
+      expect(mediumRes.isAcceptable).toBe(true);
+      expect(mediumRes.score).toBeGreaterThanOrEqual(2);
+
+      // Forte (12+ car. avec minuscules, majuscules, chiffres et symboles)
+      const strongRes = evaluatePassphraseQuality('Genealogie#Martin_2026!Securite');
+      expect(strongRes.isAcceptable).toBe(true);
+      expect(strongRes.level).toBe('strong');
+      expect(strongRes.score).toBeGreaterThanOrEqual(3);
+    });
+
+    it('gère proprement les erreurs de déchiffrement lors d\'un mot de passe erroné ou d\'un texte chiffré corrompu', async () => {
+      const passphrase = 'PhraseRobusteFamiliale#2026!';
+      const encryptedJson = await createFullBackup(sampleData, sampleArchives, sampleAccess, passphrase);
+
+      // 1. Erreur avec mot de passe incorrect
+      const wrongPwdPreview = await previewBackup(encryptedJson, 'MauvaisMotDePasse123!');
+      expect(wrongPwdPreview.isValid).toBe(false);
+      expect(wrongPwdPreview.error).toContain('incorrecte');
+
+      // 2. Erreur avec payload chiffré corrompu
+      const parsed = JSON.parse(encryptedJson);
+      parsed.encryptedPayload = 'v2:saltcorrompu:ivcorrompu:donneescorrompues==';
+      const corruptedJson = JSON.stringify(parsed);
+
+      const corruptedPreview = await previewBackup(corruptedJson, passphrase);
+      expect(corruptedPreview.isValid).toBe(false);
+      expect(corruptedPreview.error).toContain('altérée');
+    });
+
+    it('conserve l\'export standard en JSON clair avec contrôle d\'intégrité SHA-256 sans chiffrement forcé', async () => {
+      const plainBackup = await createFullBackup(sampleData, sampleArchives, sampleAccess, undefined);
+      const parsed = JSON.parse(plainBackup);
+
+      expect(parsed.manifest.format).toBe('genealogor-backup-v2');
+      expect(parsed.manifest.isEncrypted).toBe(false);
+      expect(parsed.payload).toBeDefined();
+      expect(parsed.encryptedPayload).toBeUndefined();
+      expect(parsed.payload.genealogy.individuals['@I1@'].name).toBe(sampleData.individuals['@I1@'].name);
+      expect(parsed.manifest.checksumSha256.length).toBe(64);
+    });
+  });
 });
+

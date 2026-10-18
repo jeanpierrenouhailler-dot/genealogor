@@ -37,7 +37,7 @@ import {
   markPendingChangeFailed,
   removePendingChange
 } from './lib/storage-manager';
-import { signRoomToken } from './lib/token-auth';
+// Les jetons de salle sont émis et signés exclusivement côté serveur via /api/auth/room-token
 import { 
   auth, 
   loginWithGoogle, 
@@ -230,29 +230,58 @@ export default function App() {
     }
   }, [accessList]);
 
-  // 4. Initialize Real-time WebSocket connection
+  // 4. Initialisation sécurisée de la connexion WebSocket temps réel
   useEffect(() => {
+    let isCancelled = false;
     const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    let currentToken = urlParams?.get('token') || pendingBranchAccess?.shareToken || '';
+    const invitationToken = urlParams?.get('token') || pendingBranchAccess?.shareToken || '';
 
-    // Si aucun jeton d'invitation n'est fourni, générer un jeton cryptographique signé pour la session active
-    if (!currentToken) {
-      currentToken = signRoomToken({
-        roomId,
-        role: userRole,
-        branch: currentBranchScope,
-        exp: 0,
-        iat: Date.now(),
-        sub: currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : 'Membre'),
-      });
-    }
+    const setupConnection = async () => {
+      let token = '';
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (currentUser) {
+          const idToken = await currentUser.getIdToken();
+          headers['Authorization'] = `Bearer ${idToken}`;
+        }
 
-    realtimeClient.init(
-      roomId, 
-      currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : userRole === 'editor' ? 'Éditeur' : 'Visiteur'),
-      currentBranchScope,
-      currentToken
-    );
+        const res = await fetch('/api/auth/room-token', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            roomId,
+            invitationToken: invitationToken || undefined,
+            userName: currentUser?.displayName || undefined,
+          }),
+        });
+
+        if (res.ok) {
+          const authData = await res.json();
+          if (authData.token) {
+            token = authData.token;
+            if (authData.role && authData.role !== userRole) {
+              setUserRole(authData.role);
+            }
+            if (authData.branch && authData.branch !== currentBranchScope) {
+              setCurrentBranchScope(authData.branch);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Impossible de récupérer le jeton serveur WebSocket:', err);
+      }
+
+      if (isCancelled) return;
+
+      realtimeClient.init(
+        roomId, 
+        currentUser?.displayName || (userRole === 'admin' ? 'Administrateur' : userRole === 'editor' ? 'Éditeur' : 'Visiteur'),
+        currentBranchScope,
+        token
+      );
+    };
+
+    setupConnection();
 
     const unsubConn = realtimeClient.on('connection:change', async (info) => {
       setIsWsConnected(info.connected);
@@ -494,6 +523,10 @@ export default function App() {
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', newDoc);
 
+    if (!isWsConnected) {
+      addPendingChange('archive:add', newDoc);
+    }
+
     try {
       await saveArchiveToFirestore(roomId, newDoc, currentUser);
       setIsCloudSynced(true);
@@ -510,6 +543,10 @@ export default function App() {
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', updated);
 
+    if (!isWsConnected) {
+      addPendingChange('archive:add', updated);
+    }
+
     try {
       await saveArchiveToFirestore(roomId, updated, currentUser);
       setIsCloudSynced(true);
@@ -524,6 +561,11 @@ export default function App() {
     const nextArchives = archives.filter(a => a.id !== id);
     setArchives(nextArchives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
+    realtimeClient.sendAction('archive:delete', id);
+
+    if (!isWsConnected) {
+      addPendingChange('archive:delete', id);
+    }
     
     try {
       await deleteArchiveFromFirestore(roomId, id, currentUser);
@@ -539,6 +581,10 @@ export default function App() {
     setVersionedItem(STORAGE_KEYS.TREE, newData);
     if (newData.rootPersonId) setSelectedPersonId(newData.rootPersonId);
     realtimeClient.sendAction('tree:update', newData);
+
+    if (!isWsConnected) {
+      addPendingChange('tree:update', newData);
+    }
 
     try {
       await saveTreeToFirestore(roomId, newData, currentUser);

@@ -195,4 +195,154 @@ describe('Interopérabilité et Tests GEDCOM Multi-Logiciels (P1 - Exigence 5)',
     expect(dumas._unsupportedTags?.some(t => t.tag === '_UID')).toBe(true);
     expect(dumas._unsupportedTags?.some(t => t.tag === '_FREL')).toBe(true);
   });
+
+  describe('Tests multi-logiciels généalogiques (Geneanet, Heredis, Gramps, FTM)', () => {
+    it('traite fidèlement un export Geneanet avec sources détaillées, cotes, pages et notes avec concaténation CONC/CONT', () => {
+      const geneanetGedcom = `0 HEAD
+1 SOUR GENEANET
+2 VERS 2024
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @S_GENEANET@ SOUR
+1 TITL Registres paroissiaux et d'état civil de Bretagne
+1 AUTH Archives Départementales d'Ille-et-Vilaine
+1 PUBL En ligne sur archinoe
+1 NOTE Fonds numérisé des registres anciens
+0 @I_GEN1@ INDI
+1 NAME Émile /Zola/
+1 GIVN Émile
+1 SURN Zola
+1 SEX M
+1 BIRT
+2 DATE 02 APR 1840
+2 PLAC Paris, 75000, Île-de-France, France
+2 SOUR @S_GENEANET@
+3 PAGE Vue 15/48, acte n° 312
+3 NOTE Mention marginale très lisible
+1 OCCU Écrivain et journaliste
+1 NOTE Ceci est une note très longue qui commence sur Geneanet et
+2 CONC  se poursuit sur la même ligne grâce au tag CONC,
+2 CONT puis saute une ligne grâce au tag CONT.
+1 FAMS @FAM_GEN1@
+0 @I_GEN2@ INDI
+1 NAME Alexandrine /Méley/
+1 GIVN Alexandrine
+1 SURN Méley
+1 SEX F
+1 BIRT
+2 DATE 23 MAR 1839
+2 PLAC Paris, France
+1 FAMS @FAM_GEN1@
+0 @FAM_GEN1@ FAM
+1 HUSB @I_GEN1@
+1 WIFE @I_GEN2@
+1 MARR
+2 DATE 31 MAY 1870
+2 PLAC Paris 17e, France
+2 SOUR @S_GENEANET@
+3 PAGE Acte n° 456
+1 NOTE Mariage célébré civilement
+0 TRLR`;
+
+      const parsed = parseGedcom(geneanetGedcom);
+      expect(parsed.sources?.['@S_GENEANET@']).toBeDefined();
+      expect(parsed.sources?.['@S_GENEANET@']?.title).toBe("Registres paroissiaux et d'état civil de Bretagne");
+      expect(parsed.sources?.['@S_GENEANET@']?.author).toBe("Archives Départementales d'Ille-et-Vilaine");
+
+      const zola = parsed.individuals['@I_GEN1@'];
+      expect(zola).toBeDefined();
+      expect(zola.name).toBe('Émile Zola');
+      expect(zola.occupations).toContain('Écrivain et journaliste');
+      expect(zola.birth?.citations?.[0]?.sourceId).toBe('@S_GENEANET@');
+      expect(zola.birth?.citations?.[0]?.page).toBe('Vue 15/48, acte n° 312');
+
+      // Vérifier le traitement de CONC (concaténation sur même ligne) et CONT (saut de ligne)
+      expect(zola.notes?.[0]).toContain('se poursuit sur la même ligne');
+      expect(zola.notes?.[0]).toContain('\npuis saute une ligne');
+
+      // Vérifier la famille et le mariage
+      const fam = parsed.families['@FAM_GEN1@'];
+      expect(fam).toBeDefined();
+      expect(fam.husbandId).toBe('@I_GEN1@');
+      expect(fam.wifeId).toBe('@I_GEN2@');
+      expect(fam.marriage?.date).toBe('31 MAY 1870');
+      expect(fam.marriage?.citations?.[0]?.page).toBe('Acte n° 456');
+    });
+
+    it('traite un export Gramps avec médias multiples (OBJE), événements spécifiques et liens familiaux réciproques', () => {
+      const grampsGedcom = `0 HEAD
+1 SOUR GRAMPS
+2 VERS 5.1.5
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I_GRAMPS1@ INDI
+1 NAME Victor /Hugo/
+1 SEX M
+1 BIRT
+2 DATE 26 FEB 1802
+2 PLAC Besançon, Doubs, Franche-Comté, France
+1 DEAT
+2 DATE 22 MAY 1885
+2 PLAC Paris, France
+1 OBJE
+2 FILE https://archives.example.com/hugo.jpg
+2 FORM image/jpeg
+2 TITL Portrait officiel Victor Hugo
+1 OBJE
+2 FILE /documents/testament_hugo.pdf
+2 FORM application/pdf
+2 TITL Testament olographe
+1 FAMS @FAM_GRAMPS1@
+0 @I_GRAMPS2@ INDI
+1 NAME Adèle /Foucher/
+1 SEX F
+1 BIRT
+2 DATE 27 SEP 1803
+2 PLAC Paris, France
+1 FAMS @FAM_GRAMPS1@
+0 @I_GRAMPS3@ INDI
+1 NAME Léopoldine /Hugo/
+1 SEX F
+1 BIRT
+2 DATE 28 AUG 1824
+2 PLAC Paris, France
+1 DEAT
+2 DATE 04 SEP 1843
+2 PLAC Villequier, Seine-Maritime, France
+1 FAMC @FAM_GRAMPS1@
+0 @FAM_GRAMPS1@ FAM
+1 HUSB @I_GRAMPS1@
+1 WIFE @I_GRAMPS2@
+1 CHIL @I_GRAMPS3@
+1 MARR
+2 DATE 12 OCT 1822
+2 PLAC Paris, France
+0 TRLR`;
+
+      const parsed = parseGedcom(grampsGedcom);
+      const hugo = parsed.individuals['@I_GRAMPS1@'];
+      expect(hugo).toBeDefined();
+      expect(hugo.media?.length).toBe(2);
+      expect(hugo.media?.[0].file).toBe('https://archives.example.com/hugo.jpg');
+      expect(hugo.media?.[0].title).toBe('Portrait officiel Victor Hugo');
+      expect(hugo.media?.[1].format).toBe('application/pdf');
+
+      // Vérifier les relations réciproques parents-enfant
+      const leopoldine = parsed.individuals['@I_GRAMPS3@'];
+      expect(leopoldine.familiesAsChild).toContain('@FAM_GRAMPS1@');
+
+      const fam = parsed.families['@FAM_GRAMPS1@'];
+      expect(fam.husbandId).toBe('@I_GRAMPS1@');
+      expect(fam.wifeId).toBe('@I_GRAMPS2@');
+      expect(fam.childrenIds).toContain('@I_GRAMPS3@');
+
+      // Vérifier la cohérence de l'export
+      const { gedcom: reExported } = serializeGedcomWithReport(parsed);
+      expect(reExported).toContain('Victor /Hugo/');
+      expect(reExported.toUpperCase()).toContain('portrait officiel victor hugo'.toUpperCase());
+    });
+  });
 });
+

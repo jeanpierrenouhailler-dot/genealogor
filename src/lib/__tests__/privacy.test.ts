@@ -292,4 +292,119 @@ describe('Confidentialité des personnes vivantes & contemporains (P0)', () => {
     expect(sanitized.individuals['@YOUNG@'].occupations).toEqual([]);
     expect(sanitized.families['@FAM@'].divorce).toBeUndefined();
   });
+
+  describe('Validation globale sur toutes les vues, archives, exports, partages et temps réel', () => {
+    it('s\'assure que le filtrage protège les données injectées dans les vues de l\'application (TreeView, ProfileView, TimelineView, GeoMapView, StatsView)', () => {
+      const recentYear = currentYear - 10;
+      const dataForViews: GenealogyData = {
+        individuals: {
+          '@DECEASED@': {
+            id: '@DECEASED@',
+            name: 'Ancêtre Gabriel',
+            sex: 'M',
+            birth: { date: '1800', place: 'Brest', parsedDate: { raw: '1800', year: 1800 } },
+            death: { date: '1875', place: 'Brest', parsedDate: { raw: '1875', year: 1875 } },
+            familiesAsChild: [],
+            familiesAsSpouse: [],
+            residences: [{ place: 'Brest', date: '1850' }],
+            notes: ['Note publique ancêtre'],
+          },
+          '@LIVING@': {
+            id: '@LIVING@',
+            name: 'Enfant Maxime',
+            givenName: 'Maxime',
+            surname: 'Martin',
+            sex: 'M',
+            birth: { 
+              date: `14 JUL ${recentYear}`, 
+              place: 'Maternité Privée Rennes', 
+              parsedDate: { raw: `${recentYear}`, year: recentYear },
+              notes: ['Note naissance intime']
+            },
+            familiesAsChild: [],
+            familiesAsSpouse: [],
+            occupations: ['Étudiant'],
+            residences: [{ place: 'Adresse secrète, Rennes', date: '2024' }],
+            notes: ['Note médicale strictement confidentielle'],
+          },
+        },
+        families: {},
+        rootPersonId: '@DECEASED@',
+      };
+
+      // Les vues consomment l'arbre filtré par sanitizeGenealogyDataForPrivacy
+      const viewData = sanitizeGenealogyDataForPrivacy(dataForViews);
+
+      // Ancêtre visible sans masquage
+      expect(viewData.individuals['@DECEASED@'].name).toBe('Ancêtre Gabriel');
+      expect(viewData.individuals['@DECEASED@'].birth?.place).toBe('Brest');
+
+      // Vivant masqué pour l'arbre et toutes les vues dérivées
+      const livingInView = viewData.individuals['@LIVING@'];
+      expect(livingInView.name).toBe('Martin [Privé]');
+      expect(livingInView.givenName).toBe('[Confidentiel]');
+      expect(livingInView.occupations).toEqual([]);
+      expect(livingInView.residences).toEqual([]);
+      expect(livingInView.birth?.place).toBeUndefined(); // Pas de lieu pour la carte
+      expect(livingInView.birth?.notes).toBeUndefined();
+      expect(livingInView.notes?.[0]).toContain('RGPD');
+    });
+
+    it('purge les événements temps réel diffusés aux observateurs (person:edit et archive:add)', () => {
+      const recentYear = currentYear - 5;
+      const incomingPersonEdit: Individual = {
+        id: '@LIVING_RT@',
+        name: 'Camille Martin',
+        givenName: 'Camille',
+        surname: 'Martin',
+        sex: 'F',
+        birth: { 
+          date: `20 MAY ${recentYear}`, 
+          place: 'Hôpital Necker Paris', 
+          parsedDate: { raw: `${recentYear}`, year: recentYear } 
+        },
+        familiesAsChild: [],
+        familiesAsSpouse: [],
+        notes: ['Note confidentielle temps réel'],
+      };
+
+      // Si le destinataire est viewer, le serveur applique sanitizePersonForPrivacy
+      expect(shouldProtectPerson(incomingPersonEdit)).toBe(true);
+      const sanitizedPayload = sanitizePersonForPrivacy(incomingPersonEdit);
+
+      expect(sanitizedPayload.name).toBe('Martin [Privé]');
+      expect(sanitizedPayload.birth?.place).toBeUndefined();
+      expect(sanitizedPayload.notes?.[0]).toContain('RGPD');
+      expect(sanitizedPayload.notes).not.toContain('Note confidentielle temps réel');
+    });
+
+    it('filtre les archives lors du partage pour ne pas exposer d\'actes civils contemporains ou de photos de vivants', () => {
+      const protectedIds = new Set(['@LIVING_PERSON@']);
+      const allArchives: ArchiveDocument[] = [
+        {
+          id: 'arc-1',
+          title: 'Portrait de Camille (vivante)',
+          type: 'photo',
+          linkedPersonIds: ['@LIVING_PERSON@'],
+          linkedFamilyIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          id: 'arc-2',
+          title: 'Livret de famille de l\'ancêtre (1880)',
+          type: 'livret',
+          linkedPersonIds: ['@OLD_ANCESTOR@'],
+          linkedFamilyIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      const visibleArchives = sanitizeArchivesForPrivacy(allArchives, protectedIds);
+      expect(visibleArchives.length).toBe(1);
+      expect(visibleArchives[0].id).toBe('arc-2');
+    });
+  });
 });
+

@@ -1,4 +1,4 @@
-import { GenealogyData, Individual, Family, LifeEvent, ParsedDate, Sex, GenealogicalSource } from '../types/genealogy';
+import { GenealogyData, Individual, Family, LifeEvent, ParsedDate, Sex, GenealogicalSource, SourceCitation } from '../types/genealogy';
 
 const MONTH_MAP: Record<string, number> = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -60,6 +60,7 @@ export function parseGedcom(content: string): GenealogyData {
   let currentSource: Partial<GenealogicalSource> | null = null;
   let currentEvent: { target: 'birth' | 'death' | 'baptism' | 'burial' | 'marriage' | 'divorce' | 'residence'; event: LifeEvent } | null = null;
   let currentMedia: { title?: string; file?: string; format?: string } | null = null;
+  let currentCitation: SourceCitation | null = null;
   let lastTextContainer: { get: () => string; set: (val: string) => void } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -108,6 +109,8 @@ export function parseGedcom(content: string): GenealogyData {
         currentSource = null;
       }
       currentEvent = null;
+      currentMedia = null;
+      currentCitation = null;
       lastTextContainer = null;
 
       if (tag === 'INDI') {
@@ -163,6 +166,8 @@ export function parseGedcom(content: string): GenealogyData {
     if (currentIndi) {
       if (level === 1) {
         currentEvent = null;
+        currentMedia = null;
+        currentCitation = null;
         lastTextContainer = null;
         switch (tag) {
           case 'NAME': {
@@ -237,7 +242,9 @@ export function parseGedcom(content: string): GenealogyData {
           case 'SOUR': {
             if (value) {
               if (!currentIndi.citations) currentIndi.citations = [];
-              currentIndi.citations.push({ sourceId: value.trim() });
+              const cit: SourceCitation = { sourceId: value.trim() };
+              currentIndi.citations.push(cit);
+              currentCitation = cit;
             }
             break;
           }
@@ -268,7 +275,24 @@ export function parseGedcom(content: string): GenealogyData {
             };
           } else if (tag === 'SOUR') {
             if (!currentEvent.event.citations) currentEvent.event.citations = [];
-            currentEvent.event.citations.push({ sourceId: value.trim() });
+            const cit: SourceCitation = { sourceId: value.trim() };
+            currentEvent.event.citations.push(cit);
+            currentCitation = cit;
+          }
+        }
+        if (tag === 'PAGE' && currentCitation) {
+          currentCitation.page = value.trim();
+        }
+      } else if (level === 3) {
+        if (currentCitation) {
+          if (tag === 'PAGE') {
+            currentCitation.page = value.trim();
+          } else if (tag === 'NOTE') {
+            currentCitation.notes = value.trim();
+            lastTextContainer = {
+              get: () => currentCitation!.notes || '',
+              set: (v) => { currentCitation!.notes = v; }
+            };
           }
         }
       }
@@ -280,6 +304,7 @@ export function parseGedcom(content: string): GenealogyData {
       if (level === 1) {
         currentEvent = null;
         currentMedia = null;
+        currentCitation = null;
         lastTextContainer = null;
         switch (tag) {
           case 'HUSB':
@@ -319,7 +344,9 @@ export function parseGedcom(content: string): GenealogyData {
           case 'SOUR': {
             if (value) {
               if (!currentFam.citations) currentFam.citations = [];
-              currentFam.citations.push({ sourceId: value.trim() });
+              const cit: SourceCitation = { sourceId: value.trim() };
+              currentFam.citations.push(cit);
+              currentCitation = cit;
             }
             break;
           }
@@ -339,6 +366,34 @@ export function parseGedcom(content: string): GenealogyData {
             currentEvent.event.parsedDate = parseGedcomDate(value.trim());
           } else if (tag === 'PLAC') {
             currentEvent.event.place = value.trim();
+          } else if (tag === 'NOTE') {
+            if (!currentEvent.event.notes) currentEvent.event.notes = [];
+            currentEvent.event.notes.push(value.trim());
+            const idx = currentEvent.event.notes.length - 1;
+            lastTextContainer = {
+              get: () => currentEvent!.event.notes![idx],
+              set: (v) => { currentEvent!.event.notes![idx] = v; }
+            };
+          } else if (tag === 'SOUR') {
+            if (!currentEvent.event.citations) currentEvent.event.citations = [];
+            const cit: SourceCitation = { sourceId: value.trim() };
+            currentEvent.event.citations.push(cit);
+            currentCitation = cit;
+          }
+        }
+        if (tag === 'PAGE' && currentCitation) {
+          currentCitation.page = value.trim();
+        }
+      } else if (level === 3) {
+        if (currentCitation) {
+          if (tag === 'PAGE') {
+            currentCitation.page = value.trim();
+          } else if (tag === 'NOTE') {
+            currentCitation.notes = value.trim();
+            lastTextContainer = {
+              get: () => currentCitation!.notes || '',
+              set: (v) => { currentCitation!.notes = v; }
+            };
           }
         }
       }

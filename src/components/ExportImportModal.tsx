@@ -8,6 +8,7 @@ import { serializeGedcomWithReport } from '../lib/gedcom-serializer';
 import { parseGedcom } from '../lib/gedcom-parser';
 import { createFullBackup, previewBackup, restoreBackup, restorePreBackupSafety, BackupPreview } from '../lib/backup-restore';
 import { sanitizeGenealogyDataForPrivacy, sanitizeArchivesForPrivacy, getProtectedPersonIds } from '../lib/privacy';
+import { evaluatePassphraseQuality } from '../lib/crypto';
 
 interface ExportImportModalProps {
   isOpen: boolean;
@@ -85,8 +86,9 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
     const pass = exportPassphrase.trim();
     const confirm = confirmExportPassphrase.trim();
 
-    if (!pass || pass.length < 8) {
-      setExportError('La phrase secrète doit comporter au moins 8 caractères pour garantir la sécurité AES-256.');
+    const quality = evaluatePassphraseQuality(pass);
+    if (!quality.isAcceptable) {
+      setExportError(quality.feedback || 'Phrase secrète trop faible ou non sécurisée.');
       return;
     }
     if (pass !== confirm) {
@@ -473,6 +475,25 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
                       />
                     </div>
                   </div>
+
+                  {exportPassphrase.length > 0 && (() => {
+                    const q = evaluatePassphraseQuality(exportPassphrase);
+                    const colorClass = q.level === 'strong' ? 'text-emerald-700' : q.level === 'medium' ? 'text-amber-700' : 'text-rose-700';
+                    const barBg = q.level === 'strong' ? 'bg-emerald-600' : q.level === 'medium' ? 'bg-amber-500' : 'bg-rose-500';
+                    const barWidth = q.score === 4 ? '100%' : q.score === 3 ? '75%' : q.score === 2 ? '50%' : '25%';
+                    return (
+                      <div className="space-y-1 text-[11px] bg-stone-50 p-2 rounded-lg border border-stone-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-600 font-medium">Sécurité de la phrase :</span>
+                          <span className={`font-bold ${colorClass}`}>{q.label}</span>
+                        </div>
+                        <div className="w-full bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                          <div className={`h-full ${barBg} transition-all duration-300`} style={{ width: barWidth }} />
+                        </div>
+                        {q.feedback && <p className="text-[10px] text-stone-600 italic">{q.feedback}</p>}
+                      </div>
+                    );
+                  })()}
 
                   {exportError && (
                     <div className="p-2 bg-rose-100 border border-rose-300 rounded-lg text-rose-900 text-[11px] flex items-center gap-1.5">

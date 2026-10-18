@@ -81,21 +81,45 @@ export function serializeGedcomWithReport(data: GenealogyData, options: GedcomEx
       lines.push('1 BIRT');
       if (indi.birth.date) lines.push(`2 DATE ${indi.birth.date}`);
       if (indi.birth.place) lines.push(`2 PLAC ${indi.birth.place}`);
+      if (indi.birth.citations) {
+        for (const cit of indi.birth.citations) {
+          lines.push(`2 SOUR ${cit.sourceId}`);
+          if (cit.page) lines.push(`3 PAGE ${cit.page}`);
+        }
+      }
     }
     if (indi.baptism) {
       lines.push('1 BAPM');
       if (indi.baptism.date) lines.push(`2 DATE ${indi.baptism.date}`);
       if (indi.baptism.place) lines.push(`2 PLAC ${indi.baptism.place}`);
+      if (indi.baptism.citations) {
+        for (const cit of indi.baptism.citations) {
+          lines.push(`2 SOUR ${cit.sourceId}`);
+          if (cit.page) lines.push(`3 PAGE ${cit.page}`);
+        }
+      }
     }
     if (indi.death) {
       lines.push('1 DEAT');
       if (indi.death.date) lines.push(`2 DATE ${indi.death.date}`);
       if (indi.death.place) lines.push(`2 PLAC ${indi.death.place}`);
+      if (indi.death.citations) {
+        for (const cit of indi.death.citations) {
+          lines.push(`2 SOUR ${cit.sourceId}`);
+          if (cit.page) lines.push(`3 PAGE ${cit.page}`);
+        }
+      }
     }
     if (indi.burial) {
       lines.push('1 BURI');
       if (indi.burial.date) lines.push(`2 DATE ${indi.burial.date}`);
       if (indi.burial.place) lines.push(`2 PLAC ${indi.burial.place}`);
+      if (indi.burial.citations) {
+        for (const cit of indi.burial.citations) {
+          lines.push(`2 SOUR ${cit.sourceId}`);
+          if (cit.page) lines.push(`3 PAGE ${cit.page}`);
+        }
+      }
     }
 
     if (indi.occupations) {
@@ -109,6 +133,22 @@ export function serializeGedcomWithReport(data: GenealogyData, options: GedcomEx
     }
     for (const fams of indi.familiesAsSpouse) {
       lines.push(`1 FAMS ${fams}`);
+    }
+
+    if (indi.citations) {
+      for (const cit of indi.citations) {
+        lines.push(`1 SOUR ${cit.sourceId}`);
+        if (cit.page) lines.push(`2 PAGE ${cit.page}`);
+      }
+    }
+
+    if (indi.media) {
+      for (const m of indi.media) {
+        lines.push('1 OBJE');
+        if (m.file) lines.push(`2 FILE ${m.file}`);
+        if (m.format) lines.push(`2 FORM ${m.format}`);
+        if (m.title) lines.push(`2 TITL ${m.title}`);
+      }
     }
 
     if (indi.notes) {
@@ -145,10 +185,32 @@ export function serializeGedcomWithReport(data: GenealogyData, options: GedcomEx
       lines.push('1 MARR');
       if (fam.marriage.date) lines.push(`2 DATE ${fam.marriage.date}`);
       if (fam.marriage.place) lines.push(`2 PLAC ${fam.marriage.place}`);
+      if (fam.marriage.citations) {
+        for (const cit of fam.marriage.citations) {
+          lines.push(`2 SOUR ${cit.sourceId}`);
+          if (cit.page) lines.push(`3 PAGE ${cit.page}`);
+        }
+      }
     }
     if (fam.divorce) {
       lines.push('1 DIV');
       if (fam.divorce.date) lines.push(`2 DATE ${fam.divorce.date}`);
+    }
+
+    if (fam.citations) {
+      for (const cit of fam.citations) {
+        lines.push(`1 SOUR ${cit.sourceId}`);
+        if (cit.page) lines.push(`2 PAGE ${cit.page}`);
+      }
+    }
+
+    if (fam.media) {
+      for (const m of fam.media) {
+        lines.push('1 OBJE');
+        if (m.file) lines.push(`2 FILE ${m.file}`);
+        if (m.format) lines.push(`2 FORM ${m.format}`);
+        if (m.title) lines.push(`2 TITL ${m.title}`);
+      }
     }
 
     if (fam.notes) {

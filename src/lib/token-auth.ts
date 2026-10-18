@@ -1,7 +1,8 @@
 /**
  * Module d'authentification et de validation cryptographique des jetons de salle WebSocket.
- * Implémente la signature et vérification HMAC-SHA256 (format standardisé de type JWT).
- * Compatible avec Node.js (serveur) et navigateurs/environnements de test.
+ * Implémente la signature et vérification HMAC-SHA256 conforme aux standards JWT.
+ * SÉCURITÉ P0 : Le secret HMAC DOIT être fourni par l'environnement et ne jamais
+ * comporter de valeur par défaut prévisible écrite en clair dans le code.
  */
 
 import { BranchRole, BranchScope } from '../types/genealogy';
@@ -15,8 +16,6 @@ export interface RoomTokenPayload {
   sub?: string; // Nom ou identifiant de l'utilisateur
   nonce?: string;
 }
-
-export const DEFAULT_WS_SECRET = 'genealogor_secret_hmac_2026_family_tree';
 
 /**
  * Encode une chaîne en Base64URL sécurisé (sans +, /, =)
@@ -43,30 +42,67 @@ export function base64UrlDecode(str: string): string {
   return atob(base64);
 }
 
+import * as nodeCrypto from 'crypto';
+
 /**
- * Calcule une signature HMAC-SHA256 de manière synchrone (Node.js) ou asynchrone (Web Crypto).
+ * Calcule une signature cryptographique HMAC-SHA256 formelle.
+ * Aucun fallback non-cryptographique n'est toléré.
  */
 export function computeHmacSha256Sync(data: string, secret: string): string {
+  if (!secret || typeof secret !== 'string' || secret.trim().length === 0) {
+    throw new Error('Secret cryptographique manquant ou vide pour la signature HMAC-SHA256.');
+  }
+
+  // Node.js, Bun ou runtime moderne
   try {
-    // Si nous sommes dans Node.js ou Bun
-    const crypto = (globalThis as any).crypto || (typeof require !== 'undefined' ? require('crypto') : null);
-    if (crypto && typeof crypto.createHmac === 'function') {
-      return crypto.createHmac('sha256', secret).update(data).digest('base64url');
+    if (nodeCrypto && typeof nodeCrypto.createHmac === 'function') {
+      return nodeCrypto.createHmac('sha256', secret).update(data).digest('base64url');
     }
   } catch (e) {}
 
-  // Fallback simple et déterministe pour tests sans module node:crypto
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    hash = ((hash << 5) - hash + data.charCodeAt(i) + secret.charCodeAt(i % secret.length)) | 0;
-  }
-  return base64UrlEncode('sig_' + Math.abs(hash).toString(16));
+  try {
+    const cryptoObj = (globalThis as any).crypto || (typeof require !== 'undefined' ? require('crypto') : null);
+    if (cryptoObj && typeof cryptoObj.createHmac === 'function') {
+      return cryptoObj.createHmac('sha256', secret).update(data).digest('base64url');
+    }
+  } catch (e) {}
+
+  throw new Error('Module cryptographique HMAC-SHA256 indisponible dans cet environnement.');
+}
+
+/**
+ * Génère un secret cryptographiquement robuste (256 bits aléatoires)
+ */
+export function generateEphemeralSecret(): string {
+  try {
+    if (nodeCrypto && typeof nodeCrypto.randomBytes === 'function') {
+      return nodeCrypto.randomBytes(32).toString('hex');
+    }
+  } catch (e) {}
+
+  try {
+    const cryptoObj = (globalThis as any).crypto || (typeof require !== 'undefined' ? require('crypto') : null);
+    if (cryptoObj && typeof cryptoObj.randomBytes === 'function') {
+      return cryptoObj.randomBytes(32).toString('hex');
+    }
+    if (cryptoObj && cryptoObj.getRandomValues) {
+      const bytes = new Uint8Array(32);
+      cryptoObj.getRandomValues(bytes);
+      return Array.from(bytes).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) {}
+
+  throw new Error('Générateur aléatoire cryptographique sécurisé non disponible.');
 }
 
 /**
  * Signe un jeton de salle avec son rôle, périmètre de branche et durée de validité.
+ * Exige impérativement un secret HMAC non vide.
  */
-export function signRoomToken(payload: RoomTokenPayload, secret = DEFAULT_WS_SECRET): string {
+export function signRoomToken(payload: RoomTokenPayload, secret: string): string {
+  if (!secret || secret.trim().length === 0) {
+    throw new Error('Signature impossible : secret HMAC obligatoire.');
+  }
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(payload));
   const signature = computeHmacSha256Sync(`${header}.${body}`, secret);
@@ -79,13 +115,17 @@ export function signRoomToken(payload: RoomTokenPayload, secret = DEFAULT_WS_SEC
 export function verifyRoomToken(
   token: unknown,
   expectedRoomId: string,
-  secret = DEFAULT_WS_SECRET
+  secret: string
 ): {
   valid: boolean;
   payload?: RoomTokenPayload;
   error?: string;
   code?: 'MISSING_TOKEN' | 'INVALID_FORMAT' | 'INVALID_SIGNATURE' | 'WRONG_ROOM' | 'EXPIRED_TOKEN';
 } {
+  if (!secret || secret.trim().length === 0) {
+    return { valid: false, error: 'Secret de validation HMAC non configuré', code: 'INVALID_SIGNATURE' };
+  }
+
   if (!token || typeof token !== 'string') {
     return { valid: false, error: 'Jeton de salle absent ou non fourni', code: 'MISSING_TOKEN' };
   }
@@ -96,7 +136,12 @@ export function verifyRoomToken(
   }
 
   const [header, body, signature] = parts;
-  const expectedSig = computeHmacSha256Sync(`${header}.${body}`, secret);
+  let expectedSig: string;
+  try {
+    expectedSig = computeHmacSha256Sync(`${header}.${body}`, secret);
+  } catch (err: any) {
+    return { valid: false, error: 'Échec du calcul HMAC de vérification', code: 'INVALID_SIGNATURE' };
+  }
 
   if (signature !== expectedSig) {
     return { valid: false, error: 'Signature cryptographique invalide : jeton altéré ou falsifié', code: 'INVALID_SIGNATURE' };

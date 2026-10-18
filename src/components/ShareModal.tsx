@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, Link, Copy, Check, Shield, Users, Eye, Edit3, Trash2, Key } from 'lucide-react';
 import { BranchAccess, BranchRole, BranchScope, GenealogyData } from '../types/genealogy';
 import { hashPassword } from '../lib/crypto';
-import { signRoomToken } from '../lib/token-auth';
+
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -44,14 +44,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         ? 'Branche Maternelle (Cousins côté mère)' 
         : 'Famille Élargie (Arbre complet)';
 
-    const token = signRoomToken({
-      roomId,
-      role,
-      branch,
-      exp: 0,
-      iat: Date.now(),
-      sub: accessName.trim() || defaultName,
-    });
+    // Jeton d'invitation unique vérifié côté serveur
+    const token = 'inv-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 12);
 
     let pwdHash = '';
     if (password.trim()) {
