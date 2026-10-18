@@ -187,10 +187,85 @@ function getOrCreateRoomState(roomId: string): RoomState {
 }
 
 /**
- * Synchronisation asynchrone avec Firestore si configuré.
+ * Synchronise les règles de partage d'une salle depuis la source autoritaire Firestore.
+ * Garantit que les révocations, modifications ou ajouts effectués par le propriétaire
+ * sont pris en compte instantanément sans dépendre d'une mémoire serveur obsolète.
  */
-async function syncActionToFirestore(roomId: string, action: string, payload: any, idToken?: string): Promise<boolean> {
+async function syncRoomAccessRulesFromFirestore(roomId: string, idToken?: string): Promise<boolean> {
   if (!firebaseConfig.projectId || !firebaseConfig.firestoreDatabaseId) return false;
+  if (roomId === 'martin-family-tree' || roomId === 'demo') return false;
+
+  const accessUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}/access`;
+  const headers: Record<string, string> = {};
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  try {
+    const res = await fetch(accessUrl, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = data.documents || [];
+      const roomState = getOrCreateRoomState(roomId);
+      roomState.accessRules.clear();
+
+      for (const d of docs) {
+        const fields = d.fields || {};
+        const id = fields.id?.stringValue || d.name.split('/').pop() || '';
+        const name = fields.name?.stringValue || '';
+        const branch = fields.branch?.stringValue || 'all';
+        const role = fields.role?.stringValue || 'viewer';
+        const passwordHash = fields.passwordHash?.stringValue;
+        const password = fields.password?.stringValue;
+        const shareToken = fields.shareToken?.stringValue || id;
+        const hideLiving = fields.hideLiving?.booleanValue ?? true;
+        const revoked = fields.revoked?.booleanValue === true;
+        const createdAt = parseInt(fields.createdAt?.integerValue || String(Date.now()), 10);
+        const rootPersonId = fields.rootPersonId?.stringValue || '';
+
+        // SÉCURITÉ P0 : Si la règle est révoquée dans Firestore, elle est exclue des accès actifs
+        if (!revoked) {
+          const ruleObj: BranchAccess = {
+            id,
+            name,
+            branch: branch as any,
+            role: role as any,
+            passwordHash,
+            password,
+            shareToken,
+            hideLiving,
+            createdAt,
+            rootPersonId,
+          };
+          if (shareToken) roomState.accessRules.set(shareToken, ruleObj);
+          if (id) roomState.accessRules.set(id, ruleObj);
+        }
+      }
+
+      // Persistance de l'état actualisé sur le disque local
+      try {
+        persistRoomStateToDisk(roomId, roomState);
+      } catch (e) {}
+
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[FIRESTORE AUTH] Impossible de synchroniser les règles d'accès pour ${roomId}:`, err);
+  }
+  return false;
+}
+
+/**
+ * Persistance cloud Firestore faisant autorité.
+ * Renvoie un rapport précis (succès ou erreur détaillée) pour distinguer
+ * la persistance locale sur disque de la persistance cloud Firestore.
+ */
+async function syncActionToFirestore(roomId: string, action: string, payload: any, idToken?: string): Promise<{ success: boolean; error?: string }> {
+  if (!firebaseConfig.projectId || !firebaseConfig.firestoreDatabaseId) {
+    return { success: false, error: 'Firebase Firestore non configuré sur ce serveur' };
+  }
+  if (roomId === 'martin-family-tree' || roomId === 'demo') {
+    return { success: true }; // Arbre démo en mémoire/disque
+  }
+
   const baseUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (idToken) {
@@ -201,7 +276,7 @@ async function syncActionToFirestore(roomId: string, action: string, payload: an
     if (action === 'tree:update' || action === 'person:edit') {
       const roomState = roomStates.get(roomId);
       if (roomState) {
-        await fetch(baseUrl, {
+        const res = await fetch(baseUrl, {
           method: 'PATCH',
           headers,
           body: JSON.stringify({
@@ -209,35 +284,78 @@ async function syncActionToFirestore(roomId: string, action: string, payload: an
               updatedAt: { stringValue: new Date().toISOString() },
               title: { stringValue: roomState.tree.sourceHeader || 'Arbre Familial' },
               rootPersonId: { stringValue: roomState.tree.rootPersonId || '' },
+              individualsJson: { stringValue: JSON.stringify(roomState.tree.individuals || {}) },
+              familiesJson: { stringValue: JSON.stringify(roomState.tree.families || {}) },
             }
           })
         });
+        if (!res.ok) {
+          const errText = await res.text();
+          return { success: false, error: `Firestore PATCH HTTP ${res.status}: ${errText.slice(0, 200)}` };
+        }
       }
     } else if (action === 'archive:add' && payload?.id) {
       const arcUrl = `${baseUrl}/archives/${payload.id}`;
-      await fetch(arcUrl, {
+      const res = await fetch(arcUrl, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
           fields: {
+            id: { stringValue: payload.id },
             title: { stringValue: payload.title || '' },
             type: { stringValue: payload.type || 'other' },
             date: { stringValue: payload.date || '' },
             updatedAt: { integerValue: String(Date.now()) },
+            linkedPersonIds: {
+              arrayValue: {
+                values: Array.isArray(payload.linkedPersonIds) 
+                  ? payload.linkedPersonIds.map((pid: string) => ({ stringValue: pid }))
+                  : []
+              }
+            }
           }
         })
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        return { success: false, error: `Firestore Archive PATCH HTTP ${res.status}: ${errText.slice(0, 200)}` };
+      }
     } else if (action === 'archive:delete') {
       const arcId = typeof payload === 'string' ? payload : payload?.id;
       if (arcId) {
         const arcUrl = `${baseUrl}/archives/${arcId}`;
-        await fetch(arcUrl, { method: 'DELETE', headers });
+        const res = await fetch(arcUrl, { method: 'DELETE', headers });
+        if (!res.ok && res.status !== 404) {
+          const errText = await res.text();
+          return { success: false, error: `Firestore Archive DELETE HTTP ${res.status}: ${errText.slice(0, 200)}` };
+        }
+      }
+    } else if (action === 'access:update' && Array.isArray(payload)) {
+      for (const rule of payload) {
+        if (rule.id) {
+          const ruleUrl = `${baseUrl}/access/${rule.id}`;
+          await fetch(ruleUrl, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({
+              fields: {
+                id: { stringValue: rule.id },
+                name: { stringValue: rule.name || '' },
+                branch: { stringValue: rule.branch || 'all' },
+                role: { stringValue: rule.role || 'viewer' },
+                passwordHash: rule.passwordHash ? { stringValue: rule.passwordHash } : undefined,
+                shareToken: { stringValue: rule.shareToken || rule.id },
+                hideLiving: { booleanValue: Boolean(rule.hideLiving) },
+                createdAt: { integerValue: String(rule.createdAt || Date.now()) },
+              }
+            })
+          });
+        }
       }
     }
-    return true;
-  } catch (e) {
-    console.warn('[FIRESTORE SYNC] Erreur synchro distante non bloquante :', e);
-    return false;
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Erreur réseau Firestore' };
   }
 }
 
@@ -319,7 +437,7 @@ wss.on('connection', (ws) => {
     if (info) info.isAlive = true;
   });
 
-  ws.on('message', (rawData: Buffer | string) => {
+  ws.on('message', async (rawData: Buffer | string) => {
     const info = clients.get(ws);
     if (!info) return;
 
@@ -621,8 +739,7 @@ wss.on('connection', (ws) => {
           }
         }
 
-        // P1 : PERSISTANCE DURABLE NON-VOLATILE AVANT TOUT ACCUSÉ DE RÉCEPTION
-        // L'ACK certifie au client que la modification a été inscrite de manière durable sur le serveur
+        // P1 : PERSISTANCE DURABLE : D'abord sur stockage disque local non-volatile (atomique)
         try {
           persistRoomStateToDisk(info.roomId, roomState);
         } catch (storageErr: any) {
@@ -636,12 +753,15 @@ wss.on('connection', (ws) => {
           return;
         }
 
-        // Déclencher la synchronisation distante Firestore si les identifiants sont présents
-        syncActionToFirestore(info.roomId, msg.action, msg.payload, info.idToken).catch((err) => {
-          console.warn('[STORAGE] Synchronisation distante Firestore :', err);
-        });
+        // P1 : Synchronisation Firestore avec attente active pour certifier le niveau de persistance cloud
+        let firestoreSync: { success: boolean; error?: string } = { success: false };
+        if (firebaseConfig.projectId && info.roomId !== 'martin-family-tree' && info.roomId !== 'demo') {
+          firestoreSync = await syncActionToFirestore(info.roomId, msg.action, msg.payload, info.idToken);
+        } else if (info.roomId === 'martin-family-tree' || info.roomId === 'demo') {
+          firestoreSync = { success: true };
+        }
 
-        // Action validée et persistée : relais aux autres pairs de la même salle
+        // Action validée et enregistrée : relais aux autres pairs de la même salle
         broadcastToRoom(info.roomId, ws, {
           type: 'sync:action',
           id: opId,
@@ -651,13 +771,16 @@ wss.on('connection', (ws) => {
           timestamp: Date.now(),
         });
 
-        // Accusé de réception (ACK) garantissant la persistance durable
+        // Accusé de réception (ACK) certifiant les niveaux de persistance (disque local vs cloud Firestore)
         ws.send(JSON.stringify({
           type: 'action:ack',
           opId,
           status: 'success',
           action: msg.action,
-          persisted: true,
+          persistedLocal: true,
+          persistedFirestore: firestoreSync.success,
+          storage: firestoreSync.success ? 'cloud_and_local' : 'local_disk_only',
+          firestoreError: firestoreSync.success ? undefined : firestoreSync.error,
           durable: true,
           timestamp: Date.now(),
         }));
@@ -887,6 +1010,10 @@ app.post('/api/auth/room-token', async (req, res) => {
     // 2. Authentification par lien de partage / jeton d'invitation (invitationToken)
     const tokenToCheck = invitationToken || shareToken;
     if (!isAuthorized && tokenToCheck && typeof tokenToCheck === 'string') {
+      // SÉCURITÉ P0 : Chargement systématique et actualisé des règles depuis la source d'autorité Firestore
+      // Prévient l'usage de règles obsolètes, gère les redémarrages serveur et applique immédiatement les révocations
+      await syncRoomAccessRulesFromFirestore(roomId);
+
       const rule = roomState.accessRules.get(tokenToCheck);
       if (rule) {
         // P0 : Vérification cryptographique formelle du mot de passe

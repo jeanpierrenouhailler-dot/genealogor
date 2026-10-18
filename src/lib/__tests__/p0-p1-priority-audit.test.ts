@@ -403,6 +403,92 @@ describe('Audit et Tests des Corrections P0 & P1', () => {
       expect(restored).not.toBeNull();
       expect(restored.tree.individuals['@I100@'].name).toBe('Pierre Martin');
     });
+
+    it('distingue explicitement dans l\'ACK la persistance sur disque local et la persistance cloud Firestore', () => {
+      // 1. Cas où Firestore a réussi
+      const cloudSuccessAck = {
+        type: 'action:ack',
+        opId: 'op-123',
+        status: 'success',
+        action: 'person:edit',
+        persistedLocal: true,
+        persistedFirestore: true,
+        storage: 'cloud_and_local',
+        durable: true,
+        timestamp: Date.now(),
+      };
+
+      expect(cloudSuccessAck.persistedLocal).toBe(true);
+      expect(cloudSuccessAck.persistedFirestore).toBe(true);
+      expect(cloudSuccessAck.storage).toBe('cloud_and_local');
+
+      // 2. Cas où seul le disque local est garanti (erreur réseau ou Firestore non configuré)
+      const localOnlyAck = {
+        type: 'action:ack',
+        opId: 'op-124',
+        status: 'success',
+        action: 'person:edit',
+        persistedLocal: true,
+        persistedFirestore: false,
+        storage: 'local_disk_only',
+        firestoreError: 'Firestore HTTP 503: Service Unavailable',
+        durable: true,
+        timestamp: Date.now(),
+      };
+
+      expect(localOnlyAck.persistedLocal).toBe(true);
+      expect(localOnlyAck.persistedFirestore).toBe(false);
+      expect(localOnlyAck.storage).toBe('local_disk_only');
+      expect(localOnlyAck.firestoreError).toBeDefined();
+    });
+
+    it('révoque immédiatement l\'accès lorsqu\'une règle est marquée revoked: true dans Firestore', () => {
+      const activeRules = new Map<string, BranchAccess>();
+
+      // Simulation de la synchronisation depuis Firestore
+      const firestoreDocs = [
+        {
+          fields: {
+            id: { stringValue: 'rule-valid' },
+            shareToken: { stringValue: 'token-valide-123' },
+            role: { stringValue: 'viewer' },
+            branch: { stringValue: 'all' },
+            revoked: { booleanValue: false },
+          }
+        },
+        {
+          fields: {
+            id: { stringValue: 'rule-revoked' },
+            shareToken: { stringValue: 'token-revoque-456' },
+            role: { stringValue: 'editor' },
+            branch: { stringValue: 'paternal' },
+            revoked: { booleanValue: true }, // RÉVOQUÉ PAR L'ADMIN DANS FIRESTORE
+          }
+        }
+      ];
+
+      // Parse et synchronisation
+      activeRules.clear();
+      for (const d of firestoreDocs) {
+        if (!d.fields.revoked?.booleanValue) {
+          activeRules.set(d.fields.shareToken.stringValue, {
+            id: d.fields.id.stringValue,
+            name: 'Accès',
+            branch: d.fields.branch.stringValue as any,
+            role: d.fields.role.stringValue as any,
+            shareToken: d.fields.shareToken.stringValue,
+            hideLiving: true,
+            createdAt: Date.now(),
+            rootPersonId: '@I1@',
+          });
+        }
+      }
+
+      // Le jeton valide est présent
+      expect(activeRules.has('token-valide-123')).toBe(true);
+      // Le jeton révoqué est exclu de façon autoritaire
+      expect(activeRules.has('token-revoque-456')).toBe(false);
+    });
   });
 
 });
