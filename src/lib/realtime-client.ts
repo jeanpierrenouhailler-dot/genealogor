@@ -24,7 +24,7 @@ class RealtimeClient {
   }
 
   private roomToken: string = '';
-  private pendingAcks: Map<string, { resolve: (val: { success: boolean; error?: string }) => void; timer: any }> = new Map();
+  private pendingAcks: Map<string, { resolve: (val: { success: boolean; error?: string; persisted?: boolean; durable?: boolean }) => void; timer: any }> = new Map();
 
   public init(roomId: string, userName: string = 'Membre de la famille', branch: string = 'all', roomToken: string = '') {
     this.roomId = roomId;
@@ -69,7 +69,11 @@ class RealtimeClient {
               clearTimeout(handler.timer);
               this.pendingAcks.delete(msg.opId);
               if (msg.status === 'success') {
-                handler.resolve({ success: true });
+                handler.resolve({ 
+                  success: true, 
+                  persisted: Boolean(msg.persisted), 
+                  durable: Boolean(msg.durable) 
+                });
               } else {
                 handler.resolve({ 
                   success: false, 

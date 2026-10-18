@@ -183,3 +183,43 @@ export function verifyRoomToken(
     return { valid: false, error: 'Impossible de décoder les attributs du jeton', code: 'INVALID_FORMAT' };
   }
 }
+
+/**
+ * Liste des secrets par défaut ou triviaux strictement bannis.
+ */
+export const FORBIDDEN_SECRETS = new Set([
+  'default-secret',
+  'genealogor-secret-key-2026',
+  'secret',
+  'changeme',
+  'supersecret',
+  '12345678',
+  'password',
+  'admin',
+  'ws_secret',
+  'default_ws_secret',
+  'default',
+  'test',
+]);
+
+/**
+ * Valide et résout le secret d'authentification HMAC.
+ * En production : impose obligatoirement un secret robuste (min 32 caractères, non trivial).
+ * Si absent ou non conforme en production : lève une exception fatale pour stopper le démarrage du serveur.
+ * En environnement local / test : génère un secret aléatoire fort de 256 bits si aucun secret n'est fourni.
+ */
+export function resolveWsAuthSecret(customSecret?: string, isProd: boolean = process.env.NODE_ENV === 'production'): string {
+  const candidate = (customSecret !== undefined ? customSecret : process.env.WS_AUTH_SECRET)?.trim();
+
+  if (!candidate || candidate.length < 32 || FORBIDDEN_SECRETS.has(candidate.toLowerCase())) {
+    if (isProd) {
+      throw new Error(
+        '[FATAL CRITICAL SECURITY ERROR] La variable d\'environnement WS_AUTH_SECRET est obligatoire en production, ' +
+        'doit comporter au moins 32 caractères cryptographiques et ne peut pas être un secret par défaut connu.'
+      );
+    }
+    return generateEphemeralSecret();
+  }
+
+  return candidate;
+}

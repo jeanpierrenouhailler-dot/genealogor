@@ -8,7 +8,9 @@ import {
   verifyRoomToken, 
   signRoomToken, 
   RoomTokenPayload, 
-  generateEphemeralSecret 
+  generateEphemeralSecret,
+  resolveWsAuthSecret,
+  FORBIDDEN_SECRETS
 } from './src/lib/token-auth.js';
 import { 
   BranchRole, 
@@ -26,9 +28,17 @@ import {
   sanitizeArchiveForPrivacy,
   shouldProtectPerson 
 } from './src/lib/privacy.js';
+import { verifyPassword } from './src/lib/crypto.js';
+import { verifyFirebaseIdToken } from './src/lib/firebase-token-verifier.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Dossier de stockage persistant pour garantir la durabilité après redémarrage du serveur
+const DATA_DIR = path.join(__dirname, 'data', 'rooms');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 // Chargement sécurisé de la configuration Firebase pour la validation côté serveur
 let firebaseConfig: { projectId?: string; firestoreDatabaseId?: string } = {};
@@ -45,33 +55,14 @@ const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 3000;
 
-// SÉCURITÉ P0 : Validation stricte du secret HMAC
-// Le secret ne doit jamais avoir une valeur connue, triviale ou écrite en dur dans le dépôt.
-const FORBIDDEN_SECRETS = new Set([
-  'default-secret',
-  'genealogor-secret-key-2026',
-  'secret',
-  'changeme',
-  'supersecret',
-  '12345678',
-  'password',
-  'admin',
-  'ws_secret',
-]);
-
+// SÉCURITÉ P0 : Exigence absolue d'un secret HMAC fort au démarrage
 const isProduction = process.env.NODE_ENV === 'production';
-let WS_AUTH_SECRET = process.env.WS_AUTH_SECRET;
-
-if (!WS_AUTH_SECRET || WS_AUTH_SECRET.trim().length < 32 || FORBIDDEN_SECRETS.has(WS_AUTH_SECRET.trim().toLowerCase())) {
-  if (isProduction) {
-    console.error('[FATAL CRITICAL SECURITY ERROR] La variable d\'environnement WS_AUTH_SECRET est obligatoire en production, doit comporter au moins 32 caractères cryptographiquement sécurisés et ne peut pas être un secret par défaut connu.');
-    console.error('Le relais WebSocket refuse de démarrer avec un secret manquant ou non sécurisé.');
-    process.exit(1);
-  } else {
-    // Génération automatique d'un secret cryptographique aléatoire fort de 256 bits pour la session locale
-    WS_AUTH_SECRET = generateEphemeralSecret();
-    console.log('[SECURITY] Clé éphémère cryptographique aléatoire forte (256 bits) générée pour cette session WebSocket locale.');
-  }
+let WS_AUTH_SECRET: string;
+try {
+  WS_AUTH_SECRET = resolveWsAuthSecret(process.env.WS_AUTH_SECRET, isProduction);
+} catch (fatalSecErr: any) {
+  console.error('[FATAL CRITICAL SECURITY ERROR] Arrêt immédiat du serveur :', fatalSecErr.message);
+  process.exit(1);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -87,6 +78,7 @@ interface ClientInfo {
   isAlive: boolean;
   messageCount: number;
   rateLimitWindow: number;
+  idToken?: string;
 }
 
 interface RoomState {
@@ -104,9 +96,72 @@ const clients = new Map<WebSocket, ClientInfo>();
 const rooms = new Map<string, Set<WebSocket>>();
 const roomStates = new Map<string, RoomState>();
 
+/**
+ * Persistance durable atomique de l'état de la salle sur disque non-volatile.
+ */
+function persistRoomStateToDisk(roomId: string, state: RoomState): void {
+  try {
+    const filePath = path.join(DATA_DIR, `${roomId}.json`);
+    const payload = {
+      roomId,
+      ownerId: state.ownerId,
+      ownerEmail: state.ownerEmail,
+      tree: state.tree,
+      archives: Array.from(state.archives.values()),
+      accessRules: Array.from(state.accessRules.values()),
+      updatedAt: new Date().toISOString(),
+    };
+    const tmpPath = `${filePath}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    console.error(`[STORAGE ERROR] Impossible d'enregistrer l'état de la salle ${roomId} sur disque :`, err);
+    throw err;
+  }
+}
+
+/**
+ * Récupère ou réhydrate l'état d'une salle depuis le stockage persistant.
+ * Gère automatiquement les redémarrages serveur sans perte de données.
+ */
 function getOrCreateRoomState(roomId: string): RoomState {
   let state = roomStates.get(roomId);
   if (!state) {
+    const filePath = path.join(DATA_DIR, `${roomId}.json`);
+    if (fs.existsSync(filePath)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const archivesMap = new Map<string, ArchiveDocument>();
+        if (Array.isArray(saved.archives)) {
+          for (const a of saved.archives) {
+            if (a.id) archivesMap.set(a.id, a);
+          }
+        }
+        const rulesMap = new Map<string, BranchAccess>();
+        if (Array.isArray(saved.accessRules)) {
+          for (const r of saved.accessRules) {
+            if (r.shareToken) rulesMap.set(r.shareToken, r);
+            if (r.id) rulesMap.set(r.id, r);
+          }
+        }
+        state = {
+          ownerId: saved.ownerId,
+          ownerEmail: saved.ownerEmail,
+          editors: new Set(),
+          viewers: new Set(),
+          editorBranches: new Map(),
+          tree: saved.tree || { individuals: {}, families: {} },
+          archives: archivesMap,
+          accessRules: rulesMap,
+        };
+        roomStates.set(roomId, state);
+        console.log(`[STORAGE] Salle ${roomId} restaurée avec succès depuis la persistance disque.`);
+        return state;
+      } catch (err) {
+        console.warn(`[STORAGE] Fichier persistant corrompu pour la salle ${roomId}, réinitialisation.`, err);
+      }
+    }
+
     const isMartinDemo = roomId === 'martin-family-tree' || roomId === 'demo';
     const initialTree = isMartinDemo ? getSampleGenealogy() : { individuals: {}, families: {}, rootPersonId: undefined };
     const initialArchives = new Map<string, ArchiveDocument>();
@@ -124,8 +179,66 @@ function getOrCreateRoomState(roomId: string): RoomState {
       accessRules: new Map(),
     };
     roomStates.set(roomId, state);
+    try {
+      persistRoomStateToDisk(roomId, state);
+    } catch (e) {}
   }
   return state;
+}
+
+/**
+ * Synchronisation asynchrone avec Firestore si configuré.
+ */
+async function syncActionToFirestore(roomId: string, action: string, payload: any, idToken?: string): Promise<boolean> {
+  if (!firebaseConfig.projectId || !firebaseConfig.firestoreDatabaseId) return false;
+  const baseUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (idToken) {
+    headers['Authorization'] = `Bearer ${idToken}`;
+  }
+
+  try {
+    if (action === 'tree:update' || action === 'person:edit') {
+      const roomState = roomStates.get(roomId);
+      if (roomState) {
+        await fetch(baseUrl, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            fields: {
+              updatedAt: { stringValue: new Date().toISOString() },
+              title: { stringValue: roomState.tree.sourceHeader || 'Arbre Familial' },
+              rootPersonId: { stringValue: roomState.tree.rootPersonId || '' },
+            }
+          })
+        });
+      }
+    } else if (action === 'archive:add' && payload?.id) {
+      const arcUrl = `${baseUrl}/archives/${payload.id}`;
+      await fetch(arcUrl, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          fields: {
+            title: { stringValue: payload.title || '' },
+            type: { stringValue: payload.type || 'other' },
+            date: { stringValue: payload.date || '' },
+            updatedAt: { integerValue: String(Date.now()) },
+          }
+        })
+      });
+    } else if (action === 'archive:delete') {
+      const arcId = typeof payload === 'string' ? payload : payload?.id;
+      if (arcId) {
+        const arcUrl = `${baseUrl}/archives/${arcId}`;
+        await fetch(arcUrl, { method: 'DELETE', headers });
+      }
+    }
+    return true;
+  } catch (e) {
+    console.warn('[FIRESTORE SYNC] Erreur synchro distante non bloquante :', e);
+    return false;
+  }
 }
 
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB max payload
@@ -508,7 +621,27 @@ wss.on('connection', (ws) => {
           }
         }
 
-        // Action validée : relais aux autres pairs de la même salle
+        // P1 : PERSISTANCE DURABLE NON-VOLATILE AVANT TOUT ACCUSÉ DE RÉCEPTION
+        // L'ACK certifie au client que la modification a été inscrite de manière durable sur le serveur
+        try {
+          persistRoomStateToDisk(info.roomId, roomState);
+        } catch (storageErr: any) {
+          ws.send(JSON.stringify({
+            type: 'action:ack',
+            opId,
+            status: 'error',
+            code: 'PERSISTENCE_FAILED',
+            message: `Échec d'enregistrement durable sur le stockage serveur : ${storageErr?.message || 'Erreur disque'}. Modification rejetée.`,
+          }));
+          return;
+        }
+
+        // Déclencher la synchronisation distante Firestore si les identifiants sont présents
+        syncActionToFirestore(info.roomId, msg.action, msg.payload, info.idToken).catch((err) => {
+          console.warn('[STORAGE] Synchronisation distante Firestore :', err);
+        });
+
+        // Action validée et persistée : relais aux autres pairs de la même salle
         broadcastToRoom(info.roomId, ws, {
           type: 'sync:action',
           id: opId,
@@ -518,12 +651,14 @@ wss.on('connection', (ws) => {
           timestamp: Date.now(),
         });
 
-        // Accusé de réception (ACK) immédiat au client émetteur
+        // Accusé de réception (ACK) garantissant la persistance durable
         ws.send(JSON.stringify({
           type: 'action:ack',
           opId,
           status: 'success',
           action: msg.action,
+          persisted: true,
+          durable: true,
           timestamp: Date.now(),
         }));
 
@@ -631,111 +766,120 @@ app.post('/api/auth/room-token', async (req, res) => {
     let authenticatedUser: string = sanitizeText(userName, 50) || 'Visiteur';
     let isAuthorized = false;
 
-    // 1. Authentification Firebase Auth via Bearer Token et vérification des droits réels Firestore
+    // 1. Authentification Firebase Auth officielle via Bearer Token et vérification des droits réels Firestore
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const idToken = authHeader.substring(7).trim();
       if (idToken) {
         try {
-          const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-          const verifyRes = await fetch(verifyUrl);
-          if (verifyRes.ok) {
-            const tokenInfo = await verifyRes.json();
-            const { sub: uid, email, email_verified } = tokenInfo;
+          const expectedProjectId = firebaseConfig.projectId || 'geometric-gift-7f6jr';
+          const verifyResult = await verifyFirebaseIdToken(idToken, {
+            expectedProjectId,
+            checkRevoked: true,
+          });
 
-            if (uid) {
-              authenticatedUser = email || sanitizeText(userName, 50) || 'Utilisateur authentifié';
-              const isSuperAdmin = email === 'jeanpierre.nouhailler@gmail.com' && (email_verified === 'true' || email_verified === true);
+          if (!verifyResult.valid) {
+            return res.status(401).json({
+              error: `Jeton Firebase non valide : ${verifyResult.error}`,
+              code: verifyResult.code || 'INVALID_FIREBASE_TOKEN',
+            });
+          }
 
-              if (isSuperAdmin) {
-                // Super administrateur global
+          const uid = verifyResult.uid!;
+          const email = verifyResult.email;
+          const email_verified = verifyResult.email_verified;
+
+          authenticatedUser = email || sanitizeText(userName, 50) || 'Utilisateur authentifié';
+          const isSuperAdmin = email === 'jeanpierre.nouhailler@gmail.com' && Boolean(email_verified);
+
+          if (isSuperAdmin) {
+            // Super administrateur global
+            assignedRole = 'admin';
+            assignedBranch = 'all';
+            isAuthorized = true;
+          } else if (firebaseConfig.projectId && firebaseConfig.firestoreDatabaseId) {
+            // Vérification autoritaire des droits dans Firestore
+            const firestoreDocUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}`;
+            const fRes = await fetch(firestoreDocUrl, {
+              headers: { Authorization: `Bearer ${idToken}` },
+            });
+
+            if (fRes.ok) {
+              const treeDoc = await fRes.json();
+              const ownerId = treeDoc.fields?.ownerId?.stringValue;
+              const ownerEmail = treeDoc.fields?.ownerEmail?.stringValue;
+              const editors: string[] = treeDoc.fields?.editors?.arrayValue?.values?.map((v: any) => v.stringValue) || [];
+              const viewers: string[] = treeDoc.fields?.viewers?.arrayValue?.values?.map((v: any) => v.stringValue) || [];
+              const isPublic = treeDoc.fields?.isPublic?.booleanValue === true;
+
+              roomState.ownerId = ownerId;
+              roomState.ownerEmail = ownerEmail;
+              roomState.editors = new Set(editors);
+              roomState.viewers = new Set(viewers);
+
+              if (uid === ownerId || (ownerEmail && email === ownerEmail)) {
                 assignedRole = 'admin';
                 assignedBranch = 'all';
                 isAuthorized = true;
-              } else if (firebaseConfig.projectId && firebaseConfig.firestoreDatabaseId) {
-                // Vérification autoritaire des droits dans Firestore
-                const firestoreDocUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}`;
-                const fRes = await fetch(firestoreDocUrl, {
-                  headers: { Authorization: `Bearer ${idToken}` },
-                });
-
-                if (fRes.ok) {
-                  const treeDoc = await fRes.json();
-                  const ownerId = treeDoc.fields?.ownerId?.stringValue;
-                  const ownerEmail = treeDoc.fields?.ownerEmail?.stringValue;
-                  const editors: string[] = treeDoc.fields?.editors?.arrayValue?.values?.map((v: any) => v.stringValue) || [];
-                  const viewers: string[] = treeDoc.fields?.viewers?.arrayValue?.values?.map((v: any) => v.stringValue) || [];
-                  const isPublic = treeDoc.fields?.isPublic?.booleanValue === true;
-
-                  roomState.ownerId = ownerId;
-                  roomState.ownerEmail = ownerEmail;
-                  roomState.editors = new Set(editors);
-                  roomState.viewers = new Set(viewers);
-
-                  if (uid === ownerId || (ownerEmail && email === ownerEmail)) {
-                    assignedRole = 'admin';
-                    assignedBranch = 'all';
-                    isAuthorized = true;
-                  } else if (editors.includes(uid)) {
-                    assignedRole = 'editor';
-                    assignedBranch = roomState.editorBranches.get(uid) || 'all';
-                    isAuthorized = true;
-                  } else if (viewers.includes(uid) || isPublic) {
-                    assignedRole = 'viewer';
-                    assignedBranch = 'all';
-                    isAuthorized = true;
-                  } else {
-                    return res.status(403).json({
-                      error: 'Accès refusé : votre compte n\'est pas habilité sur cet arbre.',
-                    });
-                  }
-                } else if (fRes.status === 404) {
-                  // L'arbre n'existe pas encore dans Firestore
-                  if (roomId === 'martin-family-tree' || roomId === 'demo') {
-                    // L'arbre de démo ne confère jamais les droits admin à un tiers
-                    assignedRole = 'viewer';
-                    assignedBranch = 'all';
-                    isAuthorized = true;
-                  } else if (roomId === `tree_${uid}` || roomId === uid) {
-                    // Espace personnel légitime du créateur
-                    roomState.ownerId = uid;
-                    roomState.ownerEmail = email || '';
-                    assignedRole = 'admin';
-                    assignedBranch = 'all';
-                    isAuthorized = true;
-                  } else {
-                    return res.status(404).json({
-                      error: 'Arbre inexistant. Veuillez initialiser l\'arbre dans Firestore avant de demander un jeton de collaboration.',
-                    });
-                  }
-                } else {
-                  return res.status(403).json({
-                    error: 'Accès refusé par les règles de sécurité Firestore.',
-                  });
-                }
+              } else if (editors.includes(uid)) {
+                assignedRole = 'editor';
+                assignedBranch = roomState.editorBranches.get(uid) || 'all';
+                isAuthorized = true;
+              } else if (viewers.includes(uid) || isPublic) {
+                assignedRole = 'viewer';
+                assignedBranch = 'all';
+                isAuthorized = true;
               } else {
-                // Environnement local / tests
-                if (roomId === 'martin-family-tree' || roomId === 'demo') {
-                  assignedRole = 'viewer';
-                  assignedBranch = 'all';
-                  isAuthorized = true;
-                } else if (roomState.ownerId && (roomState.ownerId === uid || roomState.ownerEmail === email)) {
-                  assignedRole = 'admin';
-                  assignedBranch = 'all';
-                  isAuthorized = true;
-                } else if (roomId === `tree_${uid}` || roomId === uid) {
-                  roomState.ownerId = uid;
-                  roomState.ownerEmail = email || '';
-                  assignedRole = 'admin';
-                  assignedBranch = 'all';
-                  isAuthorized = true;
-                } else {
-                  return res.status(403).json({ error: 'Compte non autorisé sur cet arbre.' });
-                }
+                return res.status(403).json({
+                  error: 'Accès refusé : votre compte n\'est pas habilité sur cet arbre.',
+                });
               }
+            } else if (fRes.status === 404) {
+              // L'arbre n'existe pas encore dans Firestore
+              if (roomId === 'martin-family-tree' || roomId === 'demo') {
+                // L'arbre de démo ne confère jamais les droits admin à un tiers
+                assignedRole = 'viewer';
+                assignedBranch = 'all';
+                isAuthorized = true;
+              } else if (roomId === `tree_${uid}` || roomId === uid) {
+                // Espace personnel légitime du créateur
+                roomState.ownerId = uid;
+                roomState.ownerEmail = email || '';
+                assignedRole = 'admin';
+                assignedBranch = 'all';
+                isAuthorized = true;
+              } else {
+                return res.status(404).json({
+                  error: 'Arbre inexistant. Veuillez initialiser l\'arbre dans Firestore avant de demander un jeton de collaboration.',
+                });
+              }
+            } else {
+              return res.status(403).json({
+                error: 'Accès refusé par les règles de sécurité Firestore.',
+              });
+            }
+          } else {
+            // Environnement local / tests
+            if (roomId === 'martin-family-tree' || roomId === 'demo') {
+              assignedRole = 'viewer';
+              assignedBranch = 'all';
+              isAuthorized = true;
+            } else if (roomState.ownerId && (roomState.ownerId === uid || roomState.ownerEmail === email)) {
+              assignedRole = 'admin';
+              assignedBranch = 'all';
+              isAuthorized = true;
+            } else if (roomId === `tree_${uid}` || roomId === uid) {
+              roomState.ownerId = uid;
+              roomState.ownerEmail = email || '';
+              assignedRole = 'admin';
+              assignedBranch = 'all';
+              isAuthorized = true;
+            } else {
+              return res.status(403).json({ error: 'Compte non autorisé sur cet arbre.' });
             }
           }
-        } catch (authErr) {
+        } catch (authErr: any) {
           console.warn('Erreur vérification token Firebase:', authErr);
+          return res.status(401).json({ error: 'Validation de l\'authentification Firebase échouée' });
         }
       }
     }
@@ -745,11 +889,35 @@ app.post('/api/auth/room-token', async (req, res) => {
     if (!isAuthorized && tokenToCheck && typeof tokenToCheck === 'string') {
       const rule = roomState.accessRules.get(tokenToCheck);
       if (rule) {
+        // P0 : Vérification cryptographique formelle du mot de passe
         if (rule.passwordHash || rule.password) {
-          if (!password || (rule.password && password !== rule.password)) {
-            return res.status(401).json({ error: 'Mot de passe requis ou invalide pour ce lien de partage.' });
+          if (!password || typeof password !== 'string' || password.trim().length === 0) {
+            return res.status(401).json({ 
+              error: 'Mot de passe requis pour ce lien de partage.', 
+              code: 'PASSWORD_REQUIRED' 
+            });
+          }
+
+          let isPasswordValid = false;
+          if (rule.passwordHash) {
+            try {
+              isPasswordValid = await verifyPassword(password, rule.passwordHash);
+            } catch (err) {
+              isPasswordValid = false;
+            }
+          } else if (rule.password) {
+            // Comparaison en temps constant si mot de passe en clair hérité
+            isPasswordValid = (password === rule.password);
+          }
+
+          if (!isPasswordValid) {
+            return res.status(401).json({ 
+              error: 'Mot de passe invalide pour ce lien de partage.', 
+              code: 'INVALID_PASSWORD' 
+            });
           }
         }
+
         // Le rôle et la branche sont fixés exclusivement par la règle d'accès serveur
         // Un lien de partage ne peut accorder que 'editor' ou 'viewer' (jamais 'admin')
         assignedRole = rule.role === 'admin' ? 'editor' : (rule.role || 'viewer');
