@@ -58,7 +58,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       branch,
       rootPersonId,
       role,
-      password: password.trim() || undefined,
       passwordHash: pwdHash || undefined,
       hideLiving,
       shareToken: token,

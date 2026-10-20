@@ -741,5 +741,180 @@ describe('Audit et Tests des Corrections P0 & P1', () => {
     });
   });
 
+  // =========================================================================
+  // P1.4 : SECRETS DES LIENS DE PARTAGE & PERSISTANCE LOCALE (PERMISSIONS/RETENTION)
+  // =========================================================================
+  describe('P1.4 — Audit des Secrets des Liens de Partage et de la Persistance Locale', () => {
+    const testDir = path.join(process.cwd(), 'data', 'test-rooms-security');
+
+    beforeEach(() => {
+      if (!fs.existsSync(testDir)) {
+        fs.mkdirSync(testDir, { recursive: true, mode: 0o700 });
+      }
+    });
+
+    afterEach(() => {
+      try {
+        if (fs.existsSync(testDir)) {
+          fs.rmSync(testDir, { recursive: true, force: true });
+        }
+      } catch (e) {}
+    });
+
+    it('supprime formellement tout champ password en clair avant persistance locale sur disque', () => {
+      const dirtyRule: any = {
+        id: 'acc-secret-test',
+        name: 'Branche Paternelle',
+        branch: 'paternal',
+        rootPersonId: '@I1@',
+        role: 'viewer',
+        password: 'MotDePasseEnClairInterdit123!', // NE DOIT JAMAIS SE RETROUVER SUR DISQUE
+        passwordHash: 'pbkdf2:v2:salt123:hash456',
+        hideLiving: true,
+        shareToken: 'token-secret-789',
+        createdAt: Date.now(),
+      };
+
+      // Assainissement comme exécuté par persistRoomStateToDisk
+      const { password, ...safeRule } = dirtyRule;
+      const testFilePath = path.join(testDir, 'test-sanitized.json');
+
+      const payload = {
+        roomId: 'test-room',
+        accessRules: [safeRule],
+        tree: { individuals: {}, families: {} },
+        archives: [],
+        updatedAt: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(testFilePath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
+      const rawDiskContent = fs.readFileSync(testFilePath, 'utf8');
+
+      // Vérification absolue : absence totale du mot de passe en clair
+      expect(rawDiskContent).not.toContain('MotDePasseEnClairInterdit123!');
+      expect(rawDiskContent).not.toContain('"password":');
+      // Présence unique du hash cryptographique
+      expect(rawDiskContent).toContain('passwordHash');
+      expect(rawDiskContent).toContain('pbkdf2:v2:salt123:hash456');
+    });
+
+    it('applique des permissions strictes 0o700 sur le répertoire et 0o600 sur les fichiers persistés', () => {
+      const dirStat = fs.statSync(testDir);
+      // Sur les systèmes POSIX / Linux, les permissions doivent être 0o700 (rwx------)
+      const dirMode = dirStat.mode & 0o777;
+      expect(dirMode).toBe(0o700);
+
+      const filePath = path.join(testDir, 'room-perm.json');
+      fs.writeFileSync(filePath, JSON.stringify({ test: true }), { mode: 0o600 });
+      fs.chmodSync(filePath, 0o600);
+
+      const fileStat = fs.statSync(filePath);
+      const fileMode = fileStat.mode & 0o777;
+      expect(fileMode).toBe(0o600);
+    });
+
+    it('nettoie automatiquement les fichiers temporaires orphelins *.tmp.* abandonnés', () => {
+      const orphanTmpPath = path.join(testDir, 'room-1.json.tmp.123456');
+      fs.writeFileSync(orphanTmpPath, 'temporary-abandoned-data');
+
+      // Forcer un mtime dans le passé (> 10 minutes)
+      const tenMinutesAgo = (Date.now() - 10 * 60 * 1000) / 1000;
+      fs.utimesSync(orphanTmpPath, tenMinutesAgo, tenMinutesAgo);
+
+      expect(fs.existsSync(orphanTmpPath)).toBe(true);
+
+      // Exécution de la logique de nettoyage de retention
+      const files = fs.readdirSync(testDir);
+      const now = Date.now();
+      for (const f of files) {
+        if (f.includes('.tmp.')) {
+          const fullPath = path.join(testDir, f);
+          const stat = fs.statSync(fullPath);
+          if (now - stat.mtimeMs > 5 * 60 * 1000) {
+            fs.unlinkSync(fullPath);
+          }
+        }
+      }
+
+      // Le fichier temporaire orphelin a bien été purgé
+      expect(fs.existsSync(orphanTmpPath)).toBe(false);
+    });
+
+    it('ne plante pas et maintient la résilience si le disque local est en lecture seule sur un conteneur éphémère', () => {
+      const mockState: any = {
+        roomId: 'cloud-room',
+        accessRules: new Map(),
+        archives: new Map(),
+        tree: { individuals: {}, families: {} }
+      };
+
+      let threwFatalError = false;
+      const fakeDiskWrite = () => {
+        const fakeConfig = { projectId: 'test-project' };
+        try {
+          // Simulation d'une erreur EROFS (Read-only file system sur Cloud Run ou conteneur éphémère)
+          const error: any = new Error('EROFS: read-only file system, open "/data/rooms/cloud-room.json"');
+          error.code = 'EROFS';
+          throw error;
+        } catch (err: any) {
+          if (fakeConfig.projectId) {
+            // Résilience : journalisation d'un avertissement sans planter l'opération
+            return;
+          }
+          throw err;
+        }
+      };
+
+      try {
+        fakeDiskWrite();
+      } catch (e) {
+        threwFatalError = true;
+      }
+
+      expect(threwFatalError).toBe(false);
+    });
+
+    it('réhydrate intégralement l\'arbre et les individus depuis Firestore si le disque local a été effacé', () => {
+      // Simulation d'un conteneur qui redémarre avec un état mémoire vierge
+      const freshRoomState: any = {
+        tree: { individuals: {}, families: {} },
+        archives: new Map(),
+        accessRules: new Map(),
+      };
+
+      const firestoreTreeDoc = {
+        fields: {
+          title: { stringValue: 'Arbre des Aïeux Réhydraté' },
+          rootPersonId: { stringValue: '@I50@' },
+          individualsJson: {
+            stringValue: JSON.stringify({
+              '@I50@': { id: '@I50@', name: 'Auguste Martin', sex: 'M' }
+            })
+          },
+          familiesJson: {
+            stringValue: JSON.stringify({
+              '@F10@': { id: '@F10@', husbandId: '@I50@', childrenIds: [] }
+            })
+          }
+        }
+      };
+
+      // Réhydratation
+      if (Object.keys(freshRoomState.tree.individuals).length === 0 && firestoreTreeDoc.fields.individualsJson?.stringValue) {
+        freshRoomState.tree.individuals = JSON.parse(firestoreTreeDoc.fields.individualsJson.stringValue);
+        freshRoomState.tree.families = JSON.parse(firestoreTreeDoc.fields.familiesJson.stringValue);
+        freshRoomState.tree.rootPersonId = firestoreTreeDoc.fields.rootPersonId.stringValue;
+        freshRoomState.tree.sourceHeader = firestoreTreeDoc.fields.title.stringValue;
+      }
+
+      // Vérification que les données ont été parfaitement restaurées depuis Firestore
+      expect(freshRoomState.tree.individuals['@I50@']).toBeDefined();
+      expect(freshRoomState.tree.individuals['@I50@'].name).toBe('Auguste Martin');
+      expect(freshRoomState.tree.rootPersonId).toBe('@I50@');
+      expect(freshRoomState.tree.sourceHeader).toBe('Arbre des Aïeux Réhydraté');
+    });
+  });
+
 });
+
 

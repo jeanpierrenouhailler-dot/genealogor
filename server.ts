@@ -37,9 +37,52 @@ const __dirname = path.dirname(__filename);
 
 // Dossier de stockage persistant pour garantir la durabilité après redémarrage du serveur
 const DATA_DIR = path.join(__dirname, 'data', 'rooms');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+  }
+  // SÉCURITÉ P1 : Permissions restreintes au propriétaire exclusif du processus (rwx------)
+  fs.chmodSync(DATA_DIR, 0o700);
+} catch (permErr) {
+  console.warn('[STORAGE] Avertissement permissions répertoire data/rooms:', permErr);
 }
+
+/**
+ * Nettoyage automatique des fichiers orphelins et gestion de la rétention.
+ * - Supprime les fichiers temporaires *.tmp.* abandonnés (> 5 min).
+ * - Élimine les caches de salles inactives depuis plus de 30 jours (la source d'autorité restant Firestore).
+ */
+function cleanupLocalStorage(retentionDays = 30): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) return;
+    const files = fs.readdirSync(DATA_DIR);
+    const now = Date.now();
+    const maxTempAgeMs = 5 * 60 * 1000; // 5 minutes
+    const maxRoomAgeMs = retentionDays * 24 * 60 * 60 * 1000;
+
+    for (const f of files) {
+      const fullPath = path.join(DATA_DIR, f);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (f.includes('.tmp.')) {
+          if (now - stat.mtimeMs > maxTempAgeMs) {
+            fs.unlinkSync(fullPath);
+          }
+        } else if (f.endsWith('.json') && !f.startsWith('martin-family-tree') && !f.startsWith('demo')) {
+          if (now - stat.mtimeMs > maxRoomAgeMs) {
+            console.log(`[STORAGE RETENTION] Purge du cache local inactif (${f}) après ${retentionDays} jours d'inactivité.`);
+            fs.unlinkSync(fullPath);
+          }
+        }
+      } catch (fileErr) {}
+    }
+  } catch (err) {
+    console.warn('[STORAGE] Erreur lors du nettoyage de data/rooms:', err);
+  }
+}
+
+// Exécution du nettoyage initial au démarrage
+cleanupLocalStorage();
 
 // Chargement sécurisé de la configuration Firebase pour la validation côté serveur
 let firebaseConfig: { projectId?: string; firestoreDatabaseId?: string } = {};
@@ -103,21 +146,38 @@ const roomStates = new Map<string, RoomState>();
 function persistRoomStateToDisk(roomId: string, state: RoomState): void {
   try {
     const filePath = path.join(DATA_DIR, `${roomId}.json`);
+
+    // P1 : Sécurité des règles : NE JAMAIS stocker de champ password en clair dans la sauvegarde JSON locale
+    const sanitizedAccessRules = Array.from(new Set(state.accessRules.values())).map((r: any) => {
+      const { password, ...safeRule } = r;
+      return safeRule;
+    });
+
     const payload = {
       roomId,
       ownerId: state.ownerId,
       ownerEmail: state.ownerEmail,
       tree: state.tree,
       archives: Array.from(state.archives.values()),
-      accessRules: Array.from(state.accessRules.values()),
+      accessRules: sanitizedAccessRules,
       updatedAt: new Date().toISOString(),
     };
+
     const tmpPath = `${filePath}.tmp.${Date.now()}`;
-    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8');
+    // P1 : Protection des fichiers avec permissions strictes 0o600 (lecture/écriture propriétaire exclusif)
+    fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
+    try { fs.chmodSync(tmpPath, 0o600); } catch (e) {}
     fs.renameSync(tmpPath, filePath);
-  } catch (err) {
-    console.error(`[STORAGE ERROR] Impossible d'enregistrer l'état de la salle ${roomId} sur disque :`, err);
-    throw err;
+    try { fs.chmodSync(filePath, 0o600); } catch (e) {}
+  } catch (err: any) {
+    // P1 : Comportement sur hébergement avec disque éphémère ou en lecture seule (Cloud Run / Heroku / Container) :
+    // Si Firestore est configuré, la persistance cloud fait autorité, le disque n'étant qu'un cache d'accélération
+    if (firebaseConfig.projectId) {
+      console.warn(`[STORAGE WARNING] Disque local éphémère ou inaccessible pour la salle ${roomId} (${err?.message}). Persistance assurée par Firestore.`);
+    } else {
+      console.error(`[STORAGE ERROR] Impossible d'enregistrer l'état de la salle ${roomId} sur disque :`, err);
+      throw err;
+    }
   }
 }
 
@@ -141,6 +201,7 @@ function getOrCreateRoomState(roomId: string): RoomState {
         const rulesMap = new Map<string, BranchAccess>();
         if (Array.isArray(saved.accessRules)) {
           for (const r of saved.accessRules) {
+            delete (r as any).password; // Suppression préventive de tout mot de passe en clair hérité
             if (r.shareToken) rulesMap.set(r.shareToken, r);
             if (r.id) rulesMap.set(r.id, r);
           }
@@ -215,7 +276,6 @@ async function syncRoomAccessRulesFromFirestore(roomId: string, idToken?: string
         const branch = fields.branch?.stringValue || 'all';
         const role = fields.role?.stringValue || 'viewer';
         const passwordHash = fields.passwordHash?.stringValue;
-        const password = fields.password?.stringValue;
         const shareToken = fields.shareToken?.stringValue || id;
         const hideLiving = fields.hideLiving?.booleanValue ?? true;
         const revoked = fields.revoked?.booleanValue === true;
@@ -230,7 +290,6 @@ async function syncRoomAccessRulesFromFirestore(roomId: string, idToken?: string
             branch: branch as any,
             role: role as any,
             passwordHash,
-            password,
             shareToken,
             hideLiving,
             createdAt,
@@ -851,6 +910,55 @@ app.post('/api/auth/room-token', async (req, res) => {
               roomState.editors = new Set(editors);
               roomState.viewers = new Set(viewers);
 
+              // P1 : Réhydratation automatique depuis Firestore en cas de disque local éphémère ou redémarrage conteneur
+              if (Object.keys(roomState.tree.individuals || {}).length === 0 && treeDoc.fields?.individualsJson?.stringValue) {
+                try {
+                  roomState.tree.individuals = JSON.parse(treeDoc.fields.individualsJson.stringValue);
+                } catch (e) {}
+                try {
+                  if (treeDoc.fields?.familiesJson?.stringValue) {
+                    roomState.tree.families = JSON.parse(treeDoc.fields.familiesJson.stringValue);
+                  }
+                } catch (e) {}
+                if (treeDoc.fields?.rootPersonId?.stringValue) {
+                  roomState.tree.rootPersonId = treeDoc.fields.rootPersonId.stringValue;
+                }
+                if (treeDoc.fields?.title?.stringValue) {
+                  roomState.tree.sourceHeader = treeDoc.fields.title.stringValue;
+                }
+              }
+
+              // Réhydratation des archives si absentes de la mémoire
+              if (roomState.archives.size === 0) {
+                try {
+                  const arcRes = await fetch(`${firestoreDocUrl}/archives`, {
+                    headers: { Authorization: `Bearer ${idToken}` }
+                  });
+                  if (arcRes.ok) {
+                    const arcData = await arcRes.json();
+                    for (const adoc of arcData.documents || []) {
+                      const f = adoc.fields || {};
+                      const arcId = f.id?.stringValue || adoc.name.split('/').pop() || '';
+                      if (arcId) {
+                        roomState.archives.set(arcId, {
+                          id: arcId,
+                          title: f.title?.stringValue || '',
+                          type: f.type?.stringValue || 'other',
+                          date: f.date?.stringValue || '',
+                          linkedPersonIds: f.linkedPersonIds?.arrayValue?.values?.map((v: any) => v.stringValue) || [],
+                          linkedFamilyIds: [],
+                          createdAt: parseInt(f.updatedAt?.integerValue || '0', 10),
+                          updatedAt: parseInt(f.updatedAt?.integerValue || '0', 10),
+                        } as any);
+                      }
+                    }
+                  }
+                } catch (e) {}
+              }
+
+              // Mettre à jour le cache local atomique (si le système de fichiers est inscriptible)
+              try { persistRoomStateToDisk(roomId, roomState); } catch (e) {}
+
               if (uid === ownerId || (ownerEmail && email === ownerEmail)) {
                 assignedRole = 'admin';
                 assignedBranch = 'all';
@@ -928,8 +1036,8 @@ app.post('/api/auth/room-token', async (req, res) => {
 
       const rule = roomState.accessRules.get(tokenToCheck);
       if (rule) {
-        // P0 : Vérification cryptographique formelle du mot de passe
-        if (rule.passwordHash || rule.password) {
+        // P0/P1 : Vérification cryptographique formelle du mot de passe (PBKDF2/SHA-256)
+        if (rule.passwordHash) {
           if (!password || typeof password !== 'string' || password.trim().length === 0) {
             return res.status(401).json({ 
               error: 'Mot de passe requis pour ce lien de partage.', 
@@ -938,15 +1046,10 @@ app.post('/api/auth/room-token', async (req, res) => {
           }
 
           let isPasswordValid = false;
-          if (rule.passwordHash) {
-            try {
-              isPasswordValid = await verifyPassword(password, rule.passwordHash);
-            } catch (err) {
-              isPasswordValid = false;
-            }
-          } else if (rule.password) {
-            // Comparaison en temps constant si mot de passe en clair hérité
-            isPasswordValid = (password === rule.password);
+          try {
+            isPasswordValid = await verifyPassword(password, rule.passwordHash);
+          } catch (err) {
+            isPasswordValid = false;
           }
 
           if (!isPasswordValid) {

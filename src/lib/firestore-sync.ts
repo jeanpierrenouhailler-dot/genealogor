@@ -152,7 +152,8 @@ export async function saveAccessToFirestore(
   const path = `trees/${treeId}/access/${access.id}`;
   try {
     const ref = doc(db, 'trees', treeId, 'access', access.id);
-    await setDoc(ref, access, { merge: true });
+    const { password, ...safeAccess } = access as any;
+    await setDoc(ref, safeAccess, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

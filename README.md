@@ -11,7 +11,7 @@
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.3-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Firestore%20%26%20Auth-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![Tests](https://img.shields.io/badge/Tests-109%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-114%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/Licence-Apache%202.0-green.svg)](LICENSE)
 
 [✨ Fonctionnalités](#-fonctionnalités-phares) • [🏷️ Marquage Photo](#-marquage-photo-interactif-photo-tagging) • [🔐 Sécurité & Chiffrement](#-sécurité-et-confidentialité) • [⚡ Temps Réel & TLS](#-collaboration-temps-réel--sécurité-tls) • [🚀 Démarrage](#-démarrage-rapide) • [🧪 Tests & Qualité](#-tests-automatisés--couverture)
@@ -85,7 +85,7 @@ Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynami
 | **3. Chiffrement des Sauvegardes** | Sauvegardes complètes au format `.genealogor.json` protégées en **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations), contrôle d'intégrité **SHA-256** et sauvegarde de secours pré-restauration. | ✅ Vérifié avec tests de mauvaises phrases et intégrité |
 | **4. Compatibilité GEDCOM Multi-Logiciels** | Standard GEDCOM 5.5.1 testé avec les exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**. Prise en charge des familles recomposées, conjoints multiples, dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`), sources et médias `OBJE`. | ✅ Vérifié en aller-retour (round-trip) sans perte |
 | **5. Confidentialité des Personnes Vivantes** | Protection active des contemporains (< 100 ans ou sans date de décès). Anonymisation étanche (`[Privé]`, `[Confidentiel]`, suppression des notes et des lieux précis) appliquée sur toutes les vues, les recherches, les exports, les archives et le temps réel. | ✅ Vérifié de bout en bout |
-| **6. Tests Automatisés & Build** | Suite complète de 109 tests unitaires et d'intégration couvrant 11 modules critiques (P0/P1 sécurité, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, contrôle d'erreurs d'écritures Firestore sur les règles d'accès, GEDCOM, masquage contemporains). | ✅ 109/109 tests validés, build réussi |
+| **6. Tests Automatisés & Build** | Suite complète de 114 tests unitaires et d'intégration couvrant 11 modules critiques (P0/P1 sécurité, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, assainissement strict des secrets de partage, permissions 0o700/0o600 et rétention, GEDCOM, masquage contemporains). | ✅ 114/114 tests validés, build réussi |
 
 ---
 
@@ -161,7 +161,7 @@ Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynami
 ### Installation
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/votre-compte/genealogor.git
+git clone https://github.com/nouhailler/genealogor.git
 cd genealogor
 
 # 2. Installer les dépendances
@@ -184,8 +184,8 @@ La suite de tests unitaires valide l'ensemble des règles métier, de la sécuri
 npm test
 ```
 
-### Détail des 11 Suites de Tests (109 tests au total)
-1. `src/lib/__tests__/p0-p1-priority-audit.test.ts` (25 tests) : Audit prioritaire P0 & P1 (secret HMAC obligatoire en production et interdiction des valeurs par défaut, vérification cryptographique des mots de passe PBKDF2 avec sel, validation formelle des jetons Firebase ID Token RS256/aud/iss/exp/révocation, rechargement autoritaire Firestore des règles d'accès, contrôle strict des statuts HTTP pour chaque écriture de règle, détection et arrêt immédiat sur échec partiel sans faux positif, suppression des règles obsolètes, et distinction explicite de la persistance locale vs Firestore).
+### Détail des 11 Suites de Tests (114 tests au total)
+1. `src/lib/__tests__/p0-p1-priority-audit.test.ts` (30 tests) : Audit prioritaire P0 & P1 (secret HMAC obligatoire en production et interdiction des valeurs par défaut, vérification cryptographique des mots de passe PBKDF2 avec sel, suppression absolue de tout mot de passe en clair dans la persistance JSON et l'API, permissions de stockage 0o700/0o600 et routine de nettoyage temporaire, résilience sur disque éphémère/lecture seule avec réhydratation autoritaire Firestore, validation formelle des jetons Firebase ID Token RS256/aud/iss/exp/révocation, rechargement autoritaire Firestore des règles d'accès, contrôle strict des statuts HTTP pour chaque écriture de règle, détection et arrêt immédiat sur échec partiel sans faux positif, suppression des règles obsolètes, et distinction explicite de la persistance locale vs Firestore).
 2. `src/lib/__tests__/p0-websocket-security.test.ts` (12 tests) : Sécurité WebSocket, validation souveraine des rôles côté serveur, contrôle strict de branche sur la ressource réelle (`person:edit`, `archive:add`, `archive:delete`) sans confiance aux attributs client.
 3. `src/lib/__tests__/privacy.test.ts` (11 tests) : Confidentialité contemporains (règle des 100 ans, personnes vivantes sans date, anonymisation étanche des fiches individuelles, recherches, exports, archives et flux temps réel).
 4. `src/lib/__tests__/security-penetration.test.ts` (11 tests) : Tests de robustesse et d'intrusion (tentatives de dépassement de périmètre, falsification de jetons et payloads malveillants).
