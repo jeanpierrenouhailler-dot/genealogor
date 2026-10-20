@@ -1,20 +1,23 @@
-# 🌳 Genealogor — Arbre Familial, Archives Numérisées & Marquage Photo
+# <img src="public/logo.svg" alt="Genealogor Logo" width="48" height="48" style="vertical-align: middle; margin-right: 12px; display: inline-block;" /> Genealogor — Arbre Familial, Archives Numérisées & Marquage Photo
 
 <div align="center">
 
-![Genealogor Interface Principale](docs/preview.jpg)
+<img src="docs/app_screenshot.png" alt="Capture d'écran Genealogor" width="92%" style="border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.18); border: 1px solid rgba(120,113,108,0.25);" />
 
-**Plateforme moderne de généalogie collaborative, studio d'archives paléographiques et partage sécurisé par branche.**
+<br/><br/>
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-7.0-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+**Plateforme moderne de généalogie collaborative, studio d'archives paléographiques, partage sécurisé par branche et mises à jour système automatiques.**
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.3-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Vite](https://img.shields.io/badge/Vite-6.2-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Firestore%20%26%20Auth-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![Tests](https://img.shields.io/badge/Tests-114%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
-[![License](https://img.shields.io/badge/Licence-Apache%202.0-green.svg)](LICENSE)
+[![PWA](https://img.shields.io/badge/PWA-Installable-purple?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+[![Dark Mode](https://img.shields.io/badge/Theme-Sombre%20%26%20Clair-1F2937?logo=affinitydesigner&logoColor=white)](#-thème-sombre-intégral-dark-mode)
 
-[✨ Fonctionnalités](#-fonctionnalités-phares) • [🏷️ Marquage Photo](#-marquage-photo-interactif-photo-tagging) • [🔐 Sécurité & Chiffrement](#-sécurité-et-confidentialité) • [⚡ Temps Réel & TLS](#-collaboration-temps-réel--sécurité-tls) • [🚀 Démarrage](#-démarrage-rapide) • [🧪 Tests & Qualité](#-tests-automatisés--couverture)
+[✨ Fonctionnalités](#-fonctionnalités-phares) • [🍔 Menu Hamburger](#-menu-hamburger-organisé-par-catégorie) • [⚙️ Paramètres & Mises à Jour](#️-paramètres-système--mises-à-jour-automatiques) • [🌙 Thème Sombre](#-thème-sombre-intégral-dark-mode) • [📲 Installation PWA](#-bouton-installer-lapplication-pwa) • [🏷️ Marquage Photo](#-marquage-photo-interactif-photo-tagging) • [⚖️ Mentions Légales](#-onboarding--mentions-légales-exonération-de-responsabilité) • [🧪 Tests & Audit](#-tests-automatisés--couverture)
 
 </div>
 
@@ -22,165 +25,141 @@
 
 ## 🌟 Présentation
 
-**Genealogor** est une application web conçue pour les passionnés de généalogie, les historiens familiaux et les familles souhaitant explorer, documenter et transmettre leur lignée.
+**Genealogor** est une suite logicielle généalogique complète pour les historiens familiaux, chercheurs d'archives et familles désireuses de préserver et transmettre leur patrimoine.
 
-Alliant l'esthétique soignée d'une publication éditoriale d'archive au dynamisme des outils collaboratifs actuels, Genealogor permet de visualiser les lignées familiales, d'indexer des actes manuscrits anciens, de **marquer les visages sur les photographies d'époque**, et de partager des branches spécifiques avec vos proches via des **liens privés protégés par mot de passe**, sans imposer la création d'un compte obligatoire à vos cousins.
+Alliant l'esthétique soignée d'une publication d'archive au confort des applications Web modernes, Genealogor propose :
+- 🌿 Une navigation intuitive dans l'arbre généalogique avec calcul automatique de la numérotation **Sosa-Stradonitz**.
+- 🏷️ Un **studio d'archives paléographique** avec identification faciale des ancêtres sur les clichés d'époque (**Photo Tagging**).
+- 🍔 Un **menu Hamburger structuré par catégorie** pour accéder rapidement à toutes les fonctionnalités.
+- ⚙️ Un panneau de **paramètres système complet** avec date de release, contrôle des versions, et **moteur de mises à jour automatiques en arrière-plan**.
+- 🌙 Un **thème Sombre intégral** et apaisant pour les longues soirées de recherche en archives.
+- ⚖️ Un **onboarding interactif avec clause de non-responsabilité juridique** protégeant l'auteur quant aux données généalogiques importées.
+- 💡 Des **guides d'aide contextuels rétractables** sur chaque écran et des **infobulles explicatives** sur tous les champs de saisie.
+- 📲 Un bouton **« Installer l'application » (PWA)** permettant aux novices d'installer Genealogor sur leur écran d'accueil mobile ou bureau en un seul clic.
+- 🔐 Un **partage privé par branche** protégé par mot de passe (sans création de compte obligatoire pour les membres de la famille).
 
 ---
 
 ## ✨ Fonctionnalités Phares
 
-### 🌿 1. Visualisation & Navigation dans l'Arbre
-- **Multi-vues synchronisées** :
-  - **Vue Arbre classique & Ascendance** : Arbre généalogique hiérarchique avec numérotation **Sosa-Stradonitz** (de cujus = 1, père = 2n, mère = 2n+1).
-  - **Descendance & Fratrie** : Visualisation des unions multiples, familles recomposées et enfants.
-  - **Fiche Biographique Individuelle** : Synthèse de vie complète (naissance, baptême, mariage, profession, résidences, décès, sépulture, sources et médias).
-  - **Chronologie & Frise Historique** : Mise en perspective des étapes familiales avec les grands repères de l'histoire de France (Révolution, Premier Empire, Guerres mondiales).
-  - **Carte Géographique** : Cartographie des migrations et dispersion géographique des ancêtres.
-  - **Statistiques Généalogiques** : Âge moyen au mariage, longévité par siècle, répartition des naissances par saison et patronymes fréquents.
+### 🍔 Menu Hamburger Organisé par Catégorie
+
+Accessible depuis le coin supérieur gauche de la barre de navigation, le tiroir latéral regroupe méthodiquement les fonctionnalités de l'application en 4 grands pôles ergonomiques :
+
+1. **🌿 Exploration & Visualisation** :
+   - Vue Arbre Généalogique & Ascendance Sosa
+   - Fiche Biographique Individuelle & Chronologie de vie
+   - Studio d'Archives & Déchiffrage Paléographique
+   - Frise Historique & Repères chronologiques de France
+   - Carte des Migrations & Lieux de vie
+   - Statistiques Démographiques & Détection de Doublons
+2. **🤝 Partage & Collaboration** :
+   - Partager une branche via lien privé avec mot de passe
+   - Salle collaborative temps réel avec compteur de pairs connectés
+   - Synchronisation Cloud Firebase Firestore
+3. **💾 Données & Sauvegardes** :
+   - Importer / Exporter au standard GEDCOM 5.5.1
+   - Sauvegarde intégrale chiffrée en AES-GCM 256 bits avec dérivation PBKDF2
+   - Restauration sécurisée avec sauvegarde préalable d'annulation
+4. **⚙️ Paramètres Système & Accessibilité** :
+   - Paramètres système, version et mises à jour
+   - Guide d'accueil, mentions légales et clause de non-responsabilité
+   - Bascule du Thème (Clair, Sombre, Automatique selon le système)
+   - Installer l'application sur le téléphone ou l'ordinateur (PWA)
 
 ---
 
-### 🏷️ 2. Studio d'Archives & Marquage Photo Interactif (Photo Tagging)
+### ⚙️ Paramètres Système & Mises à Jour Automatiques
+
+Genealogor intègre un système d'exploitation interne pour garantir que les utilisateurs disposent toujours de la version la plus stable et sécurisée :
+
+<div align="center">
+
+| Paramètre | Description |
+| :--- | :--- |
+| **📅 Date de sortie** | Indique la date de publication officielle de la version déployée (ex : *20 octobre 2026*). |
+| **🕒 Dernière vérification** | Affiche la date et l'heure exactes de la dernière recherche de version. |
+| **🔍 Bouton « Vérifier les mises à jour »** | Déclenche une requête immédiate avec contournement de cache (`no-store`) vers `/api/system/version`. |
+| **⚡ Bouton « Forcer la mise à jour »** | Purge instantanément le cache applicatif (`CacheStorage`), actualise les Service Workers et recharge l'application proprement sans altérer les données généalogiques locales. |
+| **🔄 Mises à jour automatiques en arrière-plan** | Service Worker d'arrière-plan (`VersionService`) qui inspecte périodiquement (toutes les 15 à 60 min, paramétrable) la disponibilité d'une nouvelle version et l'installe discrètement dès que l'onglet redevient actif. |
+
+</div>
+
+---
+
+### 🌙 Thème Sombre Intégral (Dark Mode)
+
+Pour faciliter la lecture des vieux manuscrits et réduire la fatigue oculaire lors des recherches nocturnes :
+- **3 modes disponibles** : Clair (*ambiance papier vergé et parchemin musée #FBF9F5*), Sombre (*anthracite profond #121418 et noir d'encre #15181E*) ou Automatique (*synchronisé sur le réglage système `prefers-color-scheme`*).
+- **Transitions douces** appliquées sur l'arbre, les fiches individuelles, la galerie d'actes, les modales et les tiroirs latéraux.
+- **Bouton d'accès rapide** dans la barre de navigation et dans le menu Hamburger.
+
+---
+
+### ⚖️ Onboarding & Mentions Légales (Exonération de Responsabilité)
+
+Conformément aux exigences juridiques et déontologiques relatives aux données personnelles et historiques :
+- **Modale d'accueil et d'engagement** affichée automatiquement lors de la toute première visite.
+- **Clause de non-responsabilité formelle** :
+  > *« Clause d'exonération de responsabilité : L'auteur, développeur et éditeur de cette application déclinent expressément toute responsabilité quant à l'exactitude, la véracité, l'exhaustivité, l'authenticité ou l'usage des données généalogiques, filiations, dates, transcriptions d'actes ou photographies fournies, saisies ou importées par les utilisateurs dans l'application. Chaque utilisateur est seul responsable des informations qu'il renseigne et de leur conformité avec la réglementation relative au respect de la vie privée (RGPD). »*
+- Nécessite la consultation et la validation de la clause avant acceptation (conservée en stockage local pour ne pas importuner l'utilisateur ultérieurement).
+- Consultable à tout moment depuis le menu Hamburger ou les paramètres système.
+
+---
+
+### 💡 Onboarding Contextuel & Infobulles Explicatives
+
+Pour accompagner les généalogistes débutants sans encombrer les chercheurs aguerris :
+- **Bannière d'onboarding contextuelle par écran** :
+  - Chaque vue (`tree`, `profile`, `archives`, `timeline`, `map`, `stats`) affiche un bandeau résumant l'objectif de l'écran et fournissant des conseils méthodologiques ciblés.
+  - Le bandeau peut être **replié en un clic** ou **masqué définitivement** selon les préférences de l'utilisateur.
+- **Infobulles interactives (`InfoTooltip`)** :
+  - Des pastilles d'aide discrètes ponctuent les commandes clés (Numérotation Sosa, Recherche, Ascendance vs Descendance, Profondeur de générations, Formats de date grégorien/républicain, Anonymisation des vivants, Cotes d'archives).
+  - Au survol ou au clic sur mobile, l'infobulle détaille la fonction du champ.
+
+---
+
+### 📲 Bouton « Installer l'application » (PWA)
+
+Pour les utilisateurs novices ou nomades explorant les fonds d'archives départementales sur tablette ou smartphone :
+- **Installation native en un clic** : Dès que le navigateur supporte l'événement `beforeinstallprompt`, un bouton bien visible **« Installer l'application »** apparaît dans la barre de navigation, le menu Hamburger et le menu des paramètres.
+- **Expérience plein écran (Standalone)** : L'application s'ouvre comme une application native sans barre d'adresse de navigateur.
+- **Fonctionnement hors-ligne garanti** grâce au manifest web (`manifest.json`) et au stockage Local-First.
+
+---
+
+### 🏷️ Marquage Photo Interactif (Photo Tagging)
 
 <div align="center">
   <img src="docs/photo_tagging.jpg" alt="Atelier de marquage de photographies anciennes" width="85%" style="border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
-  <p><em>Exemple de photographie ancienne de famille (vers 1912) avec marquage interactif des ancêtres.</em></p>
+  <p><em>Marquage interactif des visages d'ancêtres sur un cliché d'époque avec fiches d'identité reliées.</em></p>
 </div>
 
-- **Repères interactifs sur les visages (Photo Tagging)** :
-  - **Mode Identification en un clic** : Cliquez sur n'importe quel visage ou personnage d'une photographie de famille pour ouvrir instantanément le dialogue d'association.
-  - **Recherche prédictive dans la généalogie** : Saisissez un prénom ou un patronyme pour relier le repère à un ancêtre existant avec rappel de ses dates et lien de parenté.
-  - **Infobulles enrichies au survol** : Affiche le nom, les années de naissance/décès, le rôle sur la photo et un bouton d'accès direct à sa fiche individuelle.
-  - **Section dédiée sur la fiche individu** : La section *« Photographies & Portraits Identifiés »* récapitule toutes les photos d'archives où la personne a été identifiée, avec puce visuelle et bouton ouvrant directement le cliché dans l'atelier d'archive.
-  - **Synchronisation automatique** : L'ajout ou la suppression d'un tag maintient l'intégrité de la liste `linkedPersonIds` du document.
-
-- **Outils d'examen visuel & paléographique** :
-  - Zoom haute définition fluide jusqu'à 300 % et déplacement panoramique.
-  - Rotation à 90°, 180° et 270° pour les registres numérisés à l'horizontale.
-  - Filtres d'amélioration de lecture : Contraste renforcé, Négatif et Nuances de gris (idéal pour les écritures à l'encre délavée et les vieux tirages sépia).
-  - **Convertisseur Calendrier Républicain** : Conversion instantanée des dates révolutionnaires françaises (1792–1805 : *Vendémiaire, Brumaire, Nivôse...*) en grégorien.
+- **Repérage spatial sur les portraits** : Cliquez sur un visage pour placer un repère visuel.
+- **Liaison instantanée avec l'arbre** : Recherche prédictive pour relier le visage à une fiche individuelle existante.
+- **Section dédiée sur la fiche individu** : La fiche biographique récapitule tous les clichés d'archives où la personne est identifiée.
+- **Filtres paléographiques** : Contraste élevé, négatif, niveaux de gris et convertisseur républicain (An II – An XIV).
 
 ---
 
-### 🔐 3. Partage Sécurisé & Accès par Branche
-- **Liens privés personnalisés** :
-  - Génération d'URLs uniques par branche (**Branche Paternelle**, **Branche Maternelle**, ou **Arbre Complet**).
-- **Protection par mot de passe de branche** :
-  - Vos proches saisissent simplement le mot de passe partagé de leur branche pour déverrouiller l'accès.
-  - **Aucun compte requis** : accès immédiat en lecture ou suggestion d'ajouts.
-- **Niveaux de permissions granulaires** :
-  - 👁️ **Lecteur** : Consultation sécurisée de la branche autorisée.
-  - ✏️ **Contributeur / Éditeur** : Enrichissement des fiches et import de nouveaux actes.
-  - 👑 **Administrateur** : Contrôle complet, gestion des mots de passe, règles d'accès et export.
-
----
-
-### 🛡️ 4. Sécurité et Confidentialité (6 Piliers de Contrôle)
+### 🛡️ Matrice de Sécurité (6 Piliers de Contrôle)
 
 | Pilier de Contrôle | Mécanisme implémenté | Statut de validation |
 | :--- | :--- | :--- |
-| **1. Règles Firestore & Isolation** | ABAC strict dans `firestore.rules`. Un utilisateur ne peut ni lire, ni modifier, ni lister l'arbre ou les archives d'une autre famille. Seul l'administrateur ou le propriétaire peut gérer les accès. | ✅ Vérifié et couvert par tests unitaires dédiés |
-| **2. Mode Hors-Ligne & Résilience** | Architecture Local-First avec conteneurs versionnés (`v2.0.0`), file d'attente `PendingChange` et reprise automatique sans écrasement concurrentiel. | ✅ Vérifié et couvert par tests de corruption et replay |
-| **3. Chiffrement des Sauvegardes** | Sauvegardes complètes au format `.genealogor.json` protégées en **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations), contrôle d'intégrité **SHA-256** et sauvegarde de secours pré-restauration. | ✅ Vérifié avec tests de mauvaises phrases et intégrité |
-| **4. Compatibilité GEDCOM Multi-Logiciels** | Standard GEDCOM 5.5.1 testé avec les exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**. Prise en charge des familles recomposées, conjoints multiples, dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`), sources et médias `OBJE`. | ✅ Vérifié en aller-retour (round-trip) sans perte |
-| **5. Confidentialité des Personnes Vivantes** | Protection active des contemporains (< 100 ans ou sans date de décès). Anonymisation étanche (`[Privé]`, `[Confidentiel]`, suppression des notes et des lieux précis) appliquée sur toutes les vues, les recherches, les exports, les archives et le temps réel. | ✅ Vérifié de bout en bout |
-| **6. Tests Automatisés & Build** | Suite complète de 114 tests unitaires et d'intégration couvrant 11 modules critiques (P0/P1 sécurité, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, assainissement strict des secrets de partage, permissions 0o700/0o600 et rétention, GEDCOM, masquage contemporains). | ✅ 114/114 tests validés, build réussi |
-
----
-
-### ⚡ 5. Collaboration Temps Réel & Sécurité TLS
-
-> 🛡️ **Protection des communications en production** :
-> 
-> En production (accès via HTTPS), la communication WebSocket bascule automatiquement sur **`wss://` (WebSocket Secure sous TLS)** :
-> ```typescript
-> const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-> const wsUrl = `${protocol}//${window.location.host}/ws`;
-> ```
-> 
-> Chaque client transmet son jeton de partage (`roomToken`) lors du message `join`. Le serveur Express valide le format des identifiants, applique une limitation de débit (rate limiting à 60 msg/10s), vérifie la taille maximale des payloads (512 Ko) et n'autorise la diffusion d'actions (`sync:action`) qu'aux clients authentifiés ayant rejoint la même salle familiale isolée.
-
----
-
-## 📐 Architecture Technique
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Navigateur Client (React 19)                    │
-│                                                                        │
-│   ┌────────────────────┐   ┌───────────────────┐   ┌───────────────┐   │
-│   │   Vues Arbre &     │   │ Atelier d'Archive │   │  Gestion des  │   │
-│   │   Fiches Personnes │   │ & Photo Tagging   │   │ Accès Branche │   │
-│   └─────────┬──────────┘   └─────────┬─────────┘   └───────┬───────┘   │
-│             │                        │                     │           │
-│             ▼                        ▼                     ▼           │
-│   ┌────────────────────────────────────────────────────────────────┐   │
-│   │            Moteur Central & Gestionnaire d'État                │   │
-│   │    - Filtre de branche & Anonymisation vivants (effectiveData) │   │
-│   │    - Validateur chronologique & Détecteur de cycles            │   │
-│   │    - Moteur cryptographique AES-GCM 256 / PBKDF2 / SHA-256    │   │
-│   │    - File d'attente hors-ligne & Résilience Local-First        │   │
-│   └───────────────┬────────────────────────────┬───────────────────┘   │
-└───────────────────┼────────────────────────────┼───────────────────────┘
-                    │                            │
-      wss:// (TLS)  ▼                            ▼  HTTPS SDK v13
-   ┌────────────────────────────────┐   ┌────────────────────────────────┐
-   │    Serveur Node.js / Express   │   │     Google Cloud Firestore     │
-   │                                │   │                                │
-   │  - Relais WebSocket TLS (wss)  │   │  - Arbres (/trees/{id})        │
-   │  - Autorisation des salles     │   │  - Archives numérisées         │
-   │  - Rate limiting & assainisse- │   │  - Règles ABAC Zero-Trust      │
-   │    ment des messages           │   │  - Isolation multi-familles    │
-   └────────────────────────────────┘   └────────────────────────────────┘
-```
-
----
-
-## 🛠️ Pile Technologique
-
-| Domaine | Technologie | Rôle |
-| :--- | :--- | :--- |
-| **Frontend** | React 19 + TypeScript 7 | Interface utilisateur réactive et typage strict sans concession |
-| **Bundler & Build** | Vite 8 + TSX | Compilation instantanée, middlewares de dev et build optimisé |
-| **Design System** | Tailwind CSS 4 + Lucide Icons | Typographie éditoriale, thème parchemin musée (`#FBF9F5`) |
-| **Backend & Temps Réel** | Express 4 + ws (WebSockets TLS) | Serveur applicatif, relais sécurisé et synchronisation multi-utilisateurs |
-| **Persistance Cloud** | Firebase Firestore (SDK v13) | Stockage distribué des arbres généalogiques et fonds d'archives |
-| **Authentification** | Firebase Auth (Google Sign-In) | Connexion administrateur et sécurité des écritures |
-| **Cryptographie** | Web Crypto API native | PBKDF2 (100k itérations), AES-GCM 256-bit, SHA-256 |
-| **Standard Métier** | GEDCOM 5.5.1 + Calendrier Républicain | Interopérabilité généalogique et paléographie française |
-
----
-
-## 🚀 Démarrage Rapide
-
-### Prérequis
-- Node.js (version 20 ou supérieure recommandée)
-- npm ou bun
-
-### Installation
-```bash
-# 1. Cloner le dépôt
-git clone https://github.com/nouhailler/genealogor.git
-cd genealogor
-
-# 2. Installer les dépendances
-npm install
-
-# 3. Lancer le serveur de développement (Express + Vite + WebSocket sur le port 3000)
-npm run dev
-```
-
-Ouvrez ensuite votre navigateur sur **`http://localhost:3000`** (ou l'URL HTTPS fournie par votre hébergeur).
+| **1. Règles Firestore & Isolation** | ABAC strict dans `firestore.rules`. Un utilisateur ne peut ni lire, ni modifier, ni lister l'arbre ou les archives d'une autre famille. Seul l'administrateur ou le propriétaire peut gérer les accès. | ✅ Couvert par tests unitaires dédiés |
+| **2. Mode Hors-Ligne & Résilience** | Architecture Local-First avec conteneurs versionnés (`v2.0.0`), file d'attente `PendingChange` et reprise automatique sans écrasement concurrentiel. | ✅ Couvert par tests de corruption et replay |
+| **3. Chiffrement des Sauvegardes** | Sauvegardes complètes au format `.genealogor.json` protégées en **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations), contrôle d'intégrité **SHA-256** et sauvegarde de secours pré-restauration. | ✅ Validé avec tests de mauvaises phrases et intégrité |
+| **4. Compatibilité GEDCOM Multi-Logiciels** | Standard GEDCOM 5.5.1 testé avec les exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**. Prise en charge des familles recomposées, conjoints multiples, dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`), sources et médias `OBJE`. | ✅ Validé en aller-retour (round-trip) sans perte |
+| **5. Confidentialité des Personnes Vivantes** | Protection active des contemporains (< 100 ans ou sans date de décès). Anonymisation étanche (`[Privé]`, `[Confidentiel]`, suppression des notes et des lieux précis) appliquée sur toutes les vues, les recherches, les exports, les archives et le temps réel. | ✅ Validé de bout en bout |
+| **6. Tests Automatisés & Build** | Suite complète de 114 tests unitaires et d'intégration couvrant 11 modules critiques (P0/P1 sécurité, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, contrôle d'erreurs d'écritures Firestore, assainissement strict des secrets, GEDCOM, masquage contemporains). | ✅ 114/114 tests validés, build réussi |
 
 ---
 
 ## 🧪 Tests Automatisés & Couverture
 
-La suite de tests unitaires valide l'ensemble des règles métier, de la sécurité et de la résilience :
+Pour exécuter la suite complète de 114 tests unitaires sous Vitest :
 
 ```bash
-# Lancer tous les tests unitaires
 npm test
 ```
 
@@ -199,34 +178,21 @@ npm test
 
 ---
 
-## 🌐 Déploiement sur Cloudflare
+## 🚀 Démarrage Rapide
 
-Le dépôt est **entièrement compatible** pour un déploiement sur l'écosystème **Cloudflare**, avec deux configurations possibles :
+```bash
+# 1. Cloner le projet
+git clone https://github.com/nouhailler/genealogor.git
+cd genealogor
 
-### Option 1 : Cloudflare Pages (Recommandé pour le Frontend — 100% prêt à l'emploi)
-L'application est une SPA (Single Page Application) statique avec compilation optimisée Vite. La base de données (Firebase Firestore), l'authentification, le chiffrement Web Crypto AES-GCM et le mode hors-ligne s'exécutent entièrement côté client.
+# 2. Installer les dépendances
+npm install
 
-1. **Connecter le dépôt Git** dans le tableau de bord Cloudflare Pages (*Create a project > Connect to Git*).
-2. **Paramètres de build** :
-   - **Framework preset** : `Vite` (ou Aucun)
-   - **Build command** : `npm run build`
-   - **Build output directory** : `dist`
-   - **Node.js version** : `20` ou `22` (paramétrable via la variable `NODE_VERSION=20`)
-3. **Routage SPA** : Le fichier `public/_redirects` est déjà préconfiguré (`/* /index.html 200`) afin que tous les rechargements d'URL et deep-links fonctionnent sans erreur 404.
-4. **🔑 Autoriser votre domaine dans Firebase Auth (Indispensable pour la Connexion Google)** :
-   - Par mesure de sécurité, Google/Firebase bloque la connexion OAuth depuis tout nouveau domaine non répertorié.
-   - Rendez-vous dans la [Console Firebase (Paramètres d'Authentification)](https://console.firebase.google.com/project/geometric-gift-7f6jr/authentication/settings).
-   - Dans l'onglet **Paramètres** > section **Domaines autorisés**, cliquez sur **Ajouter un domaine**.
-   - Ajoutez votre domaine : `genealogor.swinux.ch` (ou `swinux.ch`, ainsi que votre sous-domaine `*.pages.dev` si vous l'utilisez).
-   - Cliquez sur **Enregistrer**. L'effet est **immédiat** sans avoir besoin de relancer un build.
-5. **Relais Temps Réel & WebSocket** :
-   - Si aucun serveur WebSocket n'est configuré, l'application fonctionne parfaitement : Firestore assure la synchronisation temps réel des données (`onSnapshot`), et `BroadcastChannel` synchronise les onglets locaux.
-   - Si vous souhaitez activer le relais WebSocket de curseurs/présence, renseignez simplement la variable d'environnement `VITE_WS_URL=wss://votre-relais.com/ws` dans les paramètres Cloudflare Pages.
+# 3. Lancer en développement (Serveur unifié Express + Vite + WebSocket)
+npm run dev
+```
 
-### Option 2 : Hébergement Fullstack (Frontend + Relais WebSocket Node.js)
-Pour faire tourner simultanément le serveur `server.ts` (Express + WebSocket natif `ws`) :
-- Déploiement sur conteneur Node.js : **Docker / Cloud Run / Railway / Render / Fly.io / VPS**.
-- Ou déploiement du relais sur **Cloudflare Workers avec Durable Objects** pour un fonctionnement 100% serverless sur l'edge de Cloudflare.
+L'application est disponible sur **`http://localhost:3000`**.
 
 ---
 

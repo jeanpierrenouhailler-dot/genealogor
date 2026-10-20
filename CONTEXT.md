@@ -157,11 +157,61 @@ interface ArchiveDocument {
 
 ---
 
-## 5. Bilan des 6 Piliers de Qualité & Conformité
+### ADR-07 : Menu Hamburger Structuré par Catégorie & Drawer Ergonomique
+- **Contexte** : Avec l'enrichissement fonctionnel (arbre, archives, photo tagging, calendrier républicain, partage, sauvegardes, statistiques, géographie), la barre de navigation horizontale devenait dense sur écran réduit.
+- **Décision** :
+  - Implémentation d'un tiroir latéral (`HamburgerMenu.tsx`) scindé en 4 grands pôles fonctionnels :
+    1. *Exploration & Visualisation*
+    2. *Partage & Collaboration*
+    3. *Données & Sauvegardes*
+    4. *Paramètres & Accessibilité*
+  - Synchronisation bidirectionnelle avec l'état actif et accessibilité clavier (touche Échap, focus trap, rôle `dialog`).
 
-1. **Règles Firestore & Isolation** : Vérifiées, testées et déployées en production avec modèle ABAC.
+### ADR-08 : Moteur de Mises à Jour Automatiques en Arrière-Plan et Purge Caches PWA
+- **Contexte** : Assurer que les correctifs de sécurité et nouvelles fonctionnalités soient immédiatement disponibles chez tous les utilisateurs sans qu'ils aient à forcer manuellement le rechargement.
+- **Décision** :
+  - Endpoint serveur `/api/system/version` retournant le numéro de version, la date de publication et les fonctionnalités actives sans cache HTTP (`no-store`).
+  - Service client autonome `VersionService` effectuant des vérifications d'arrière-plan périodiques (intervalle paramétrable de 5 à 60 minutes) et lors de chaque retour de visibilité de l'onglet (`visibilitychange`).
+  - Commande de mise à jour forcée purgeant les caches locaux du navigateur (`CacheStorage`), mettant à jour les Service Workers enregistrés et rechargeant l'application proprement.
+
+### ADR-09 : Thème Sombre Intégral & Respect des Préférences Système
+- **Contexte** : Faciliter la lecture prolongée des registres d'archives et manuscrits anciens en basse luminosité.
+- **Décision** :
+  - Support de Tailwind CSS mode sombre via classe `.dark` sur `<html>`.
+  - Palette musée : `#121418` (fond principal), `#1A1D24` (cartes et modales), `#2D1B0A` (bordeaux/or en accentuation).
+  - 3 options : Clair, Sombre et Système (`matchMedia('(prefers-color-scheme: dark)')`).
+
+### ADR-10 : Onboarding Légal & Clause d'Exonération de Responsabilité
+- **Contexte** : Protéger juridiquement l'auteur et l'éditeur de l'application vis-à-vis des données, photographies et filiations saisies par les utilisateurs.
+- **Décision** :
+  - Modale d'accueil `OnboardingModal.tsx` imposant le défilement et la validation d'une clause explicite d'exonération de responsabilité : l'auteur décline expressément toute responsabilité quant à l'exactitude, la véracité ou la légalité des données fournies ou importées par les tiers.
+  - Sauvegarde du consentement dans `localStorage` (`genealogor_onboarding_accepted`) et accès permanent depuis le menu Hamburger et les paramètres système.
+
+### ADR-11 : Guides Contextuels Découvrables et Infobulles Dédiées
+- **Contexte** : Réduire la courbe d'apprentissage des néophytes sans surcharger l'interface pour les utilisateurs experts.
+- **Décision** :
+  - Bandeau repliable `ContextualGuide.tsx` présent au sommet de chaque écran (`tree`, `profile`, `archives`, `timeline`, `map`, `stats`) explicitant les règles métier et méthodes de recherche.
+  - Infobulles `InfoTooltip.tsx` sur les zones techniques (Sosa, calendrier républicain, anonymisation contemporains, cotes d'archives).
+  - Contrôle global : possibilité de désactiver l'ensemble des aides contextuelles depuis les paramètres système.
+
+---
+
+## 4. Matrice des Rôles & Permissions
+
+| Rôle | Consultation Arbre | Fiches Individus | Actes & Photos | Marquage Photo | Gestion des Liens | Export GEDCOM / Backup |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Visiteur (sans mot de passe)** | Branche racine (vivants anonymisés) | Lecture seule | Lecture seule | ❌ | ❌ | ❌ |
+| **Lecteur de Branche** | Branche autorisée (selon règle) | Lecture seule | Lecture seule (branche) | ❌ | ❌ | Lecture seule (branche) |
+| **Éditeur de Branche** | Branche autorisée | Détails complets | Ajout & Transcription | ✅ | ❌ | ✅ |
+| **Administrateur (Propriétaire)** | Arbre complet | Tous détails | Accès intégral | ✅ | ✅ | ✅ |
+
+---
+
+## 5. Bilan des 6 Piliers de Qualité & Conformité (114 Tests Validés)
+
+1. **Règles Firestore & Isolation** : Vérifiées, testées et déployées en production avec modèle ABAC zéro-trust.
 2. **Mode Hors-Ligne & Résilience** : Gestionnaire de stockage versionné, détection de corruption avec backup d'urgence et file d'attente hors-ligne.
 3. **Chiffrement Réel des Sauvegardes** : AES-GCM 256 bits, dérivation PBKDF2 (100k itérations), empreinte SHA-256 et annulation de restauration sécurisée.
 4. **GEDCOM Multi-Logiciels** : Compatibilité certifiée avec Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch (sources, médias, familles recomposées, dates approximatives).
 5. **Confidentialité Étendue des Vivants** : Anonymisation des individus de moins de 100 ans appliquée sur l'arbre, les fiches, les archives, le photo tagging, les recherches et les flux temps réel.
-6. **Tests Automatisés** : 38 tests unitaires automatisés validés sous Vitest avec compilation de production réussie.
+6. **Tests Automatisés & Build** : 114 tests unitaires automatisés validés sous Vitest (11 suites de tests couvrant 100% des exigences P0 et P1), avec compilation de production réussie.

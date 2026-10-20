@@ -11,6 +11,11 @@ import { ExportImportModal } from './components/ExportImportModal';
 import { EditPersonModal } from './components/views/EditPersonModal';
 import { MergeModal } from './components/views/MergeModal';
 import { PassphraseScreen } from './components/PassphraseScreen';
+import { HamburgerMenu } from './components/HamburgerMenu';
+import { SystemSettingsModal } from './components/SystemSettingsModal';
+import { OnboardingModal, hasAcceptedOnboarding } from './components/OnboardingModal';
+import { ContextualGuide } from './components/ContextualGuide';
+import { getStoredTheme, applyTheme, toggleTheme, ThemeMode } from './lib/theme';
 
 import { GenealogyData, Individual, ArchiveDocument, BranchAccess, BranchRole, BranchScope } from './types/genealogy';
 import { getSampleGenealogy, createEmptyGenealogy, isSampleGenealogy } from './lib/sample-data';
@@ -92,6 +97,22 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Individual | null>(null);
+  const [isHamburgerOpen, setIsHamburgerOpen] = useState(false);
+  const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => !hasAcceptedOnboarding());
+
+  // Thème Sombre / Clair / Système
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
+
+  useEffect(() => {
+    applyTheme(themeMode);
+  }, [themeMode]);
+
+  const handleToggleTheme = () => {
+    const next = toggleTheme(themeMode);
+    setThemeMode(next);
+    showToast(`Thème : ${next === 'dark' ? 'Sombre' : next === 'light' ? 'Clair' : 'Automatique (système)'}`);
+  };
 
   // Access control & Private branch links
   const [accessList, setAccessList] = useState<BranchAccess[]>(() => {
@@ -721,7 +742,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#FBF9F5] dark:bg-[#121418] text-stone-900 dark:text-stone-100 flex flex-col font-sans transition-colors duration-200">
       
       {/* Top Navbar */}
       <Navbar
@@ -729,6 +750,10 @@ export default function App() {
         onTabChange={setActiveTab}
         onOpenShareModal={() => setIsShareModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenHamburgerMenu={() => setIsHamburgerOpen(true)}
+        onOpenSystemSettings={() => setIsSystemSettingsOpen(true)}
+        themeMode={themeMode}
+        onToggleTheme={handleToggleTheme}
         currentAccess={accessList.find(a => a.branch === currentBranchScope)}
         userRole={userRole}
         connectedPeerCount={connectedPeerCount}
@@ -782,6 +807,9 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 pb-16">
+        {/* Guide d'onboarding contextuel dynamique par écran */}
+        <ContextualGuide screen={activeTab} />
+
         {activeTab === 'tree' && (
           <TreeView
             data={effectiveData}
@@ -960,8 +988,40 @@ export default function App() {
         />
       )}
 
+      {/* Hamburger Drawer Menu */}
+      <HamburgerMenu
+        isOpen={isHamburgerOpen}
+        onClose={() => setIsHamburgerOpen(false)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenSystemSettings={() => setIsSystemSettingsOpen(true)}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        themeMode={themeMode}
+        onToggleTheme={handleToggleTheme}
+        isCloudSynced={isCloudSynced}
+        isWsConnected={isWsConnected}
+      />
+
+      {/* System Settings & Updates Modal */}
+      <SystemSettingsModal
+        isOpen={isSystemSettingsOpen}
+        onClose={() => setIsSystemSettingsOpen(false)}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        isWsConnected={isWsConnected}
+        isCloudSynced={isCloudSynced}
+      />
+
+      {/* Legal Disclaimer & Welcome Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        isDismissable={hasAcceptedOnboarding()}
+      />
+
       {/* Footer */}
-      <footer className="border-t border-stone-200/80 bg-stone-100/60 py-4 px-6 text-center text-xs text-stone-500 font-mono">
+      <footer className="border-t border-stone-200/80 dark:border-stone-800 bg-stone-100/60 dark:bg-[#0D0F12] py-4 px-6 text-center text-xs text-stone-500 dark:text-stone-400 font-mono transition-colors">
         <span>Genealogor · Recherche historique, archives numérisées, synchronisation Firestore et collaboration familiale</span>
       </footer>
 

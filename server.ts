@@ -840,6 +840,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', activeRoomsCount: rooms.size, totalClientsCount: clients.size });
 });
 
+// Endpoint de version et de vérification des mises à jour système
+app.get('/api/system/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({
+    version: '2.5.0',
+    releaseDate: '2026-10-20',
+    timestamp: Date.now(),
+    channel: 'stable',
+    features: ['dark-mode', 'hamburger-menu', 'pwa-install', 'system-updates', 'context-guides'],
+  });
+});
+
 // Endpoint d'authentification et d'émission de jeton de salle sécurisé (HMAC-SHA256)
 // SÉCURITÉ P0 : Le rôle n'est JAMAIS choisi par le client ; il est souverainement déterminé
 // par le serveur via vérification Firebase Auth ou jeton de partage vérifié.

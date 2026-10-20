@@ -3,6 +3,39 @@
 Toutes les modifications notables apportées au projet **Genealogor** sont consignées dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.5.0] — 2026-10-20
+
+### 🌟 Ajouté
+- **🍔 Menu Hamburger ergonomique par Catégories** :
+  - Nouveau tiroir latéral interactif accessible depuis la barre supérieure (`HamburgerMenu.tsx`).
+  - Catégorisation claire en 4 pôles : *Exploration & Visualisation* (Arbre, Fiches, Archives, Frise, Carte, Statistiques), *Partage & Collaboration* (Partage par branche, Relais WebSocket, Cloud Firestore), *Données & Sauvegardes* (GEDCOM 5.5.1, Sauvegarde chiffrée AES-GCM, Restauration), *Paramètres & Accessibilité*.
+- **⚙️ Paramètres Système & Mises à Jour Automatiques en Arrière-Plan** :
+  - Modale dédiée `SystemSettingsModal.tsx` affichant la date de release officielle (*20 octobre 2026*) et l'horodatage précis de la dernière vérification.
+  - Bouton **« Vérifier les mises à jour »** avec contournement du cache navigateur (`/api/system/version`).
+  - Bouton **« Forcer la mise à jour »** purgeant les caches locaux du Service Worker (`caches.delete`) et réenregistrant les workers sans toucher aux données locales.
+  - Service d'arrière-plan autonome `VersionService` vérifiant périodiquement les nouvelles versions selon un intervalle paramétrable et à chaque reprise d'activité d'onglet.
+- **🌙 Thème Sombre Intégral (Dark Mode)** :
+  - Implémentation complète du Dark Mode avec support natif Tailwind CSS (`dark:` classes).
+  - Palette soignée : `#121418` pour les fonds, `#1A1D24` pour les cartes et modales, et bordures adoucies en `dark:border-stone-800`.
+  - Bascule instantanée à 3 états : Clair, Sombre et Automatique (détection de `prefers-color-scheme`).
+- **⚖️ Onboarding avec Clause d'Exonération de Responsabilité Légale** :
+  - Dialogue de premier accueil `OnboardingModal.tsx` imposant la lecture et l'acceptation d'une clause de non-responsabilité juridique formelle stipulant expressément que l'auteur et l'éditeur ne sauraient être tenus responsables des données saisies ou importées par les utilisateurs.
+- **💡 Onboarding Contextuel & Infobulles par Écran** :
+  - Composant `ContextualGuide.tsx` fournissant un bandeau explicatif pliable sur chaque écran (`tree`, `profile`, `archives`, `timeline`, `map`, `stats`) avec conseils méthodologiques.
+  - Composant `InfoTooltip.tsx` déployé sur tous les contrôles clés (numérotation Sosa, recherche, profondeur de générations, modes d'arbre, formats de dates, champs biographiques).
+- **📲 Bouton « Installer l'application » (PWA)** :
+  - Bouton interactif `PwaInstallButton.tsx` détectant l'événement `beforeinstallprompt` pour installer Genealogor directement sur l'écran d'accueil mobile ou desktop en un clic.
+- **🎨 Logo Héraldique & Documentation Visuelle** :
+  - Logo SVG vectoriel doré et héraldique (`/logo.svg`).
+  - Intégration de la capture d'écran de l'application dans la documentation (`docs/app_screenshot.png`).
+
+### 🛡️ Sécurité & Résilience Firestore (P1)
+- **Contrôle Strict des Statuts d'Écriture Firestore (`server.ts` & `firestore-sync-action.ts`)** :
+  - Vérification systématique du code HTTP `res.ok` sur chaque document de règle d'accès synchronisé.
+  - Interruption immédiate et signalement explicite d'erreur en cas d'échec partiel (sans annoncer de synchronisation complète abusive).
+  - Suppression physique et marquage effectif des règles révoquées dans Firestore (`revoked: true`).
+  - Validation par 114 tests unitaires sous Vitest.
+
 ---
 
 ## [1.3.0] — 2026-10-15

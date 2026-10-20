@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { GenealogyData, Individual } from '../../types/genealogy';
 import { computeSosaNumbers } from '../../lib/sosa-aboville';
+import { InfoTooltip } from '../InfoTooltip';
 
 interface TreeViewProps {
   data: GenealogyData;
@@ -242,16 +243,19 @@ export const TreeView: React.FC<TreeViewProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-serif text-lg font-bold text-stone-900">
+              <h2 className="font-serif text-lg font-bold text-stone-900 dark:text-stone-100">
                 {currentPerson.name}
               </h2>
               {sosaMap[currentPerson.id] && (
-                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200/60">
-                  Sosa {sosaMap[currentPerson.id]}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
+                    Sosa {sosaMap[currentPerson.id]}
+                  </span>
+                  <InfoTooltip content="Numérotation Sosa-Stradonitz : 1 est la racine de référence, les pères ont des numéros pairs et les mères des numéros impairs." />
+                </div>
               )}
             </div>
-            <p className="text-xs text-stone-500">
+            <p className="text-xs text-stone-500 dark:text-stone-400">
               Racine actuelle de l'arbre · {currentPerson.birth?.date || 'Date inconnue'} {currentPerson.birth?.place ? `à ${currentPerson.birth.place.split(',')[0]}` : ''}
             </p>
           </div>
@@ -262,26 +266,29 @@ export const TreeView: React.FC<TreeViewProps> = ({
           {onAddNewPerson && (
             <button
               onClick={onAddNewPerson}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 rounded-lg transition-colors cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>Ajouter une personne</span>
             </button>
           )}
 
-          <div className="relative w-56">
+          <div className="relative w-56 flex items-center">
             <input
               type="text"
               value={searchFilter}
               onChange={e => setSearchFilter(e.target.value)}
               placeholder="Changer d'individu..."
-              className="w-full text-xs bg-stone-50 border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-800"
+              className="w-full text-xs bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-lg pl-8 pr-7 py-1.5 text-stone-800 dark:text-stone-100 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-800"
             />
             <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
+            <div className="absolute right-2 top-1.5">
+              <InfoTooltip content="Recherche instantanée pour changer la personne pivot et recalculer l'arbre et les Sosa." />
+            </div>
 
             {/* Autocomplete dropdown */}
             {filteredIndividuals.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg max-h-48 overflow-y-auto z-30 p-1">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl shadow-lg max-h-48 overflow-y-auto z-30 p-1">
                 {filteredIndividuals.slice(0, 8).map(ind => (
                   <button
                     key={ind.id}
@@ -289,7 +296,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
                       onSelectPerson(ind.id);
                       setSearchFilter('');
                     }}
-                    className="w-full text-left p-1.5 hover:bg-amber-50 rounded text-xs text-stone-800 flex items-center justify-between"
+                    className="w-full text-left p-1.5 hover:bg-amber-50 dark:hover:bg-stone-800 rounded text-xs text-stone-800 dark:text-stone-200 flex items-center justify-between"
                   >
                     <span className="font-medium truncate">{ind.name}</span>
                     <span className="text-[10px] text-stone-400 font-mono">{ind.birth?.date || ''}</span>
@@ -300,39 +307,43 @@ export const TreeView: React.FC<TreeViewProps> = ({
           </div>
 
           {/* Mode ascendance vs descendance */}
-          <div className="flex items-center p-1 bg-stone-100 rounded-lg text-xs font-medium text-stone-600">
-            <button
-              onClick={() => setTreeMode('ancestors')}
-              className={`px-3 py-1 rounded-md transition-colors ${
-                treeMode === 'ancestors' ? 'bg-white text-stone-900 shadow-2xs font-semibold' : 'hover:text-stone-900'
-              }`}
-            >
-              Ascendance
-            </button>
-            <button
-              onClick={() => setTreeMode('descendants')}
-              className={`px-3 py-1 rounded-md transition-colors ${
-                treeMode === 'descendants' ? 'bg-white text-stone-900 shadow-2xs font-semibold' : 'hover:text-stone-900'
-              }`}
-            >
-              Descendance
-            </button>
+          <div className="flex items-center gap-1">
+            <div className="flex items-center p-1 bg-stone-100 dark:bg-stone-800/90 rounded-lg text-xs font-medium text-stone-600 dark:text-stone-300">
+              <button
+                onClick={() => setTreeMode('ancestors')}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  treeMode === 'ancestors' ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-semibold' : 'hover:text-stone-900 dark:hover:text-stone-100'
+                }`}
+              >
+                Ascendance
+              </button>
+              <button
+                onClick={() => setTreeMode('descendants')}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  treeMode === 'descendants' ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-2xs font-semibold' : 'hover:text-stone-900 dark:hover:text-stone-100'
+                }`}
+              >
+                Descendance
+              </button>
+            </div>
+            <InfoTooltip content="Ascendance : remonte vers les ancêtres. Descendance : déroule la postérité et les enfants." />
           </div>
 
           {/* Nombre de générations */}
-          <div className="flex items-center gap-1.5 text-xs text-stone-600 font-mono">
+          <div className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400 font-mono">
             <span>Générations:</span>
             {[3, 4, 5].map(n => (
               <button
                 key={n}
                 onClick={() => setGenerationsCount(n)}
-                className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                  generationsCount === n ? 'bg-amber-900 text-white font-bold' : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                className={`w-6 h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
+                  generationsCount === n ? 'bg-amber-900 dark:bg-amber-700 text-white font-bold' : 'bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300'
                 }`}
               >
                 {n}
               </button>
             ))}
+            <InfoTooltip content="Ajuste la profondeur d'arbre affichée (3 à 5 générations)." />
           </div>
         </div>
       </div>
