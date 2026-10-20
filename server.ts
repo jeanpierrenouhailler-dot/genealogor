@@ -30,6 +30,7 @@ import {
 } from './src/lib/privacy.js';
 import { verifyPassword } from './src/lib/crypto.js';
 import { verifyFirebaseIdToken } from './src/lib/firebase-token-verifier.js';
+import { syncActionToFirestore as performFirestoreSync } from './src/lib/firestore-sync-action.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -259,104 +260,14 @@ async function syncRoomAccessRulesFromFirestore(roomId: string, idToken?: string
  * la persistance locale sur disque de la persistance cloud Firestore.
  */
 async function syncActionToFirestore(roomId: string, action: string, payload: any, idToken?: string): Promise<{ success: boolean; error?: string }> {
-  if (!firebaseConfig.projectId || !firebaseConfig.firestoreDatabaseId) {
-    return { success: false, error: 'Firebase Firestore non configuré sur ce serveur' };
-  }
-  if (roomId === 'martin-family-tree' || roomId === 'demo') {
-    return { success: true }; // Arbre démo en mémoire/disque
-  }
-
-  const baseUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/trees/${roomId}`;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (idToken) {
-    headers['Authorization'] = `Bearer ${idToken}`;
-  }
-
-  try {
-    if (action === 'tree:update' || action === 'person:edit') {
-      const roomState = roomStates.get(roomId);
-      if (roomState) {
-        const res = await fetch(baseUrl, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({
-            fields: {
-              updatedAt: { stringValue: new Date().toISOString() },
-              title: { stringValue: roomState.tree.sourceHeader || 'Arbre Familial' },
-              rootPersonId: { stringValue: roomState.tree.rootPersonId || '' },
-              individualsJson: { stringValue: JSON.stringify(roomState.tree.individuals || {}) },
-              familiesJson: { stringValue: JSON.stringify(roomState.tree.families || {}) },
-            }
-          })
-        });
-        if (!res.ok) {
-          const errText = await res.text();
-          return { success: false, error: `Firestore PATCH HTTP ${res.status}: ${errText.slice(0, 200)}` };
-        }
-      }
-    } else if (action === 'archive:add' && payload?.id) {
-      const arcUrl = `${baseUrl}/archives/${payload.id}`;
-      const res = await fetch(arcUrl, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          fields: {
-            id: { stringValue: payload.id },
-            title: { stringValue: payload.title || '' },
-            type: { stringValue: payload.type || 'other' },
-            date: { stringValue: payload.date || '' },
-            updatedAt: { integerValue: String(Date.now()) },
-            linkedPersonIds: {
-              arrayValue: {
-                values: Array.isArray(payload.linkedPersonIds) 
-                  ? payload.linkedPersonIds.map((pid: string) => ({ stringValue: pid }))
-                  : []
-              }
-            }
-          }
-        })
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        return { success: false, error: `Firestore Archive PATCH HTTP ${res.status}: ${errText.slice(0, 200)}` };
-      }
-    } else if (action === 'archive:delete') {
-      const arcId = typeof payload === 'string' ? payload : payload?.id;
-      if (arcId) {
-        const arcUrl = `${baseUrl}/archives/${arcId}`;
-        const res = await fetch(arcUrl, { method: 'DELETE', headers });
-        if (!res.ok && res.status !== 404) {
-          const errText = await res.text();
-          return { success: false, error: `Firestore Archive DELETE HTTP ${res.status}: ${errText.slice(0, 200)}` };
-        }
-      }
-    } else if (action === 'access:update' && Array.isArray(payload)) {
-      for (const rule of payload) {
-        if (rule.id) {
-          const ruleUrl = `${baseUrl}/access/${rule.id}`;
-          await fetch(ruleUrl, {
-            method: 'PATCH',
-            headers,
-            body: JSON.stringify({
-              fields: {
-                id: { stringValue: rule.id },
-                name: { stringValue: rule.name || '' },
-                branch: { stringValue: rule.branch || 'all' },
-                role: { stringValue: rule.role || 'viewer' },
-                passwordHash: rule.passwordHash ? { stringValue: rule.passwordHash } : undefined,
-                shareToken: { stringValue: rule.shareToken || rule.id },
-                hideLiving: { booleanValue: Boolean(rule.hideLiving) },
-                createdAt: { integerValue: String(rule.createdAt || Date.now()) },
-              }
-            })
-          });
-        }
-      }
-    }
-    return { success: true };
-  } catch (e: any) {
-    return { success: false, error: e?.message || 'Erreur réseau Firestore' };
-  }
+  return performFirestoreSync(
+    { projectId: firebaseConfig.projectId, firestoreDatabaseId: firebaseConfig.firestoreDatabaseId },
+    roomId,
+    action,
+    payload,
+    idToken,
+    (rid) => roomStates.get(rid)?.tree
+  );
 }
 
 const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB max payload
@@ -734,6 +645,7 @@ wss.on('connection', (ws) => {
         } else if (msg.action === 'access:update' && Array.isArray(msg.payload)) {
           roomState.accessRules.clear();
           for (const rule of msg.payload) {
+            if (rule.revoked) continue; // P0/P1 : Les règles révoquées ne sont jamais réactivées en mémoire
             if (rule.shareToken) roomState.accessRules.set(rule.shareToken, rule);
             if (rule.id) roomState.accessRules.set(rule.id, rule);
           }

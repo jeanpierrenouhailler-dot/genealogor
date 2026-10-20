@@ -55,6 +55,7 @@ import {
   deleteArchiveFromFirestore, 
   subscribeToArchives, 
   saveAccessToFirestore, 
+  deleteAccessFromFirestore,
   subscribeToAccessList,
   clearTreeFromFirestore
 } from './lib/firestore-sync';
@@ -701,6 +702,7 @@ export default function App() {
     try {
       await saveAccessToFirestore(roomId, newAcc, currentUser);
     } catch (e) {}
+    realtimeClient.sendAction('access:update', next);
     showToast(`Lien pour ${newAcc.name} créé.`);
   };
 
@@ -895,11 +897,15 @@ export default function App() {
         roomId={roomId}
         accessList={accessList}
         onAddAccess={handleAddAccessRule}
-        onDeleteAccess={(id) => {
+        onDeleteAccess={async (id) => {
           const next = accessList.filter(a => a.id !== id);
           setAccessList(next);
           setVersionedItem(STORAGE_KEYS.ACCESS, next);
-          showToast('Lien d\'accès révoqué.');
+          try {
+            await deleteAccessFromFirestore(roomId, id, currentUser);
+          } catch (e) {}
+          realtimeClient.sendAction('access:update', next);
+          showToast('Lien d\'accès révoqué et supprimé.');
         }}
         rootPersonId={data.rootPersonId || Object.keys(data.individuals)[0]}
       />

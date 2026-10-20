@@ -19,6 +19,7 @@ import {
   ArchiveDocument, 
   BranchAccess 
 } from '../../types/genealogy';
+import { syncActionToFirestore } from '../firestore-sync-action';
 
 describe('Audit et Tests des Corrections P0 & P1', () => {
 
@@ -491,4 +492,254 @@ describe('Audit et Tests des Corrections P0 & P1', () => {
     });
   });
 
+  // =========================================================================
+  // P1.3 : SYNCHRONISATION FIRESTORE DES RÈGLES DE PARTAGE & CONTRÔLE STATUTS HTTP
+  // =========================================================================
+  describe('P1.3 — Contrôle strict des écritures Firestore pour access:update et gestion des révocations', () => {
+    const fakeConfig = {
+      projectId: 'test-project-123',
+      firestoreDatabaseId: '(default)',
+    };
+
+    it('retourne une erreur explicite et interrompt la synchronisation si une règle échoue après qu\'une première a réussi', async () => {
+      const rulesPayload: BranchAccess[] = [
+        {
+          id: 'rule-alpha',
+          name: 'Branche Paternelle',
+          branch: 'paternal',
+          rootPersonId: '@I1@',
+          role: 'viewer',
+          shareToken: 'token-alpha',
+          hideLiving: true,
+          createdAt: Date.now(),
+        },
+        {
+          id: 'rule-beta',
+          name: 'Branche Maternelle',
+          branch: 'maternal',
+          rootPersonId: '@I1@',
+          role: 'editor',
+          shareToken: 'token-beta',
+          hideLiving: false,
+          createdAt: Date.now(),
+        }
+      ];
+
+      // Mock fetch: la 1ère règle réussit (HTTP 200), la 2ème échoue (HTTP 500)
+      const mockFetch = async (url: any, opts: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/access')) {
+          // List existing rules: empty
+          return { ok: true, status: 200, json: async () => ({ documents: [] }) };
+        }
+        if (urlStr.endsWith('rule-alpha')) {
+          return { ok: true, status: 200, text: async () => '{"name":"rule-alpha"}' };
+        }
+        if (urlStr.endsWith('rule-beta')) {
+          return { ok: false, status: 500, text: async () => 'Internal Server Error Firestore' };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+
+      const result = await syncActionToFirestore(
+        fakeConfig,
+        'tree-456',
+        'access:update',
+        rulesPayload,
+        'mock-token',
+        undefined,
+        mockFetch as any
+      );
+
+      // Vérifications P1 strictes :
+      expect(result.success).toBe(false);
+      expect(result.savedCount).toBe(1); // La 1ère a été enregistrée
+      expect(result.error).toBeDefined();
+      expect(result.error).toContain('rule-beta');
+      expect(result.error).toContain('500');
+      expect(result.error).toContain('1/2 enregistrées');
+    });
+
+    it('confirme le succès complet (success: true) lorsque toutes les règles sont persistées avec succès', async () => {
+      const rulesPayload: BranchAccess[] = [
+        {
+          id: 'rule-1',
+          name: 'Accès 1',
+          branch: 'all',
+          rootPersonId: '@I1@',
+          role: 'viewer',
+          shareToken: 'token-1',
+          hideLiving: true,
+          createdAt: Date.now(),
+        },
+        {
+          id: 'rule-2',
+          name: 'Accès 2',
+          branch: 'all',
+          rootPersonId: '@I1@',
+          role: 'viewer',
+          shareToken: 'token-2',
+          hideLiving: true,
+          createdAt: Date.now(),
+        }
+      ];
+
+      const mockFetch = async (url: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/access')) {
+          return { ok: true, status: 200, json: async () => ({ documents: [] }) };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+
+      const result = await syncActionToFirestore(
+        fakeConfig,
+        'tree-456',
+        'access:update',
+        rulesPayload,
+        'mock-token',
+        undefined,
+        mockFetch as any
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.savedCount).toBe(2);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('supprime de Firestore les règles supprimées ou retirées du payload (DELETE HTTP)', async () => {
+      const deletedUrls: string[] = [];
+
+      const currentPayload: BranchAccess[] = [
+        {
+          id: 'rule-conservee',
+          name: 'Règle Conservée',
+          branch: 'all',
+          rootPersonId: '@I1@',
+          role: 'viewer',
+          shareToken: 'token-keep',
+          hideLiving: true,
+          createdAt: Date.now(),
+        }
+      ];
+
+      const mockFetch = async (url: any, opts: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/access') && (!opts || opts.method === undefined)) {
+          // Firestore contient 'rule-conservee' ET 'rule-obsolete'
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              documents: [
+                { name: 'projects/p/databases/d/documents/trees/tree-1/access/rule-conservee' },
+                { name: 'projects/p/databases/d/documents/trees/tree-1/access/rule-obsolete' },
+              ]
+            })
+          };
+        }
+        if (opts?.method === 'DELETE') {
+          deletedUrls.push(urlStr);
+          return { ok: true, status: 200, text: async () => '{}' };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+
+      const result = await syncActionToFirestore(
+        fakeConfig,
+        'tree-1',
+        'access:update',
+        currentPayload,
+        'mock-token',
+        undefined,
+        mockFetch as any
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.deletedCount).toBe(1);
+      expect(deletedUrls.some(u => u.endsWith('rule-obsolete'))).toBe(true);
+    });
+
+    it('rejette et signale une erreur si la suppression d\'une règle obsolète échoue dans Firestore', async () => {
+      const currentPayload: BranchAccess[] = [];
+
+      const mockFetch = async (url: any, opts: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/access') && (!opts || !opts.method)) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              documents: [
+                { name: 'projects/p/databases/d/documents/trees/tree-1/access/rule-interdite' },
+              ]
+            })
+          };
+        }
+        if (opts?.method === 'DELETE') {
+          return { ok: false, status: 403, text: async () => 'Permission denied on Firestore delete' };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+
+      const result = await syncActionToFirestore(
+        fakeConfig,
+        'tree-1',
+        'access:update',
+        currentPayload,
+        'mock-token',
+        undefined,
+        mockFetch as any
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('DELETE HTTP 403');
+    });
+
+    it('persiste l\'état revoked: true dans Firestore pour les règles révoquées explicitement', async () => {
+      let sentBody: any = null;
+
+      const revokedPayload: BranchAccess[] = [
+        {
+          id: 'rule-to-revoke',
+          name: 'Règle Révoquée',
+          branch: 'all',
+          rootPersonId: '@I1@',
+          role: 'viewer',
+          shareToken: 'token-rev',
+          hideLiving: true,
+          revoked: true, // EXPLICITEMENT RÉVOQUÉ
+          createdAt: Date.now(),
+        }
+      ];
+
+      const mockFetch = async (url: any, opts: any) => {
+        const urlStr = String(url);
+        if (urlStr.endsWith('/access') && (!opts || !opts.method)) {
+          return { ok: true, status: 200, json: async () => ({ documents: [] }) };
+        }
+        if (opts?.method === 'PATCH') {
+          sentBody = JSON.parse(opts.body);
+          return { ok: true, status: 200, text: async () => '{}' };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      };
+
+      const result = await syncActionToFirestore(
+        fakeConfig,
+        'tree-1',
+        'access:update',
+        revokedPayload,
+        'mock-token',
+        undefined,
+        mockFetch as any
+      );
+
+      expect(result.success).toBe(true);
+      expect(sentBody).not.toBeNull();
+      expect(sentBody.fields.revoked.booleanValue).toBe(true);
+    });
+  });
+
 });
+

@@ -148,6 +148,7 @@ export interface BranchAccess {
   passwordHash?: string;
   hideLiving: boolean;
   shareToken: string;
+  revoked?: boolean;
   createdAt: number;
 }
 

@@ -158,6 +158,36 @@ export async function saveAccessToFirestore(
   }
 }
 
+export async function deleteAccessFromFirestore(
+  treeId: string,
+  accessId: string,
+  currentUser: User | null
+): Promise<void> {
+  if (!currentUser) return;
+  const path = `trees/${treeId}/access/${accessId}`;
+  try {
+    const ref = doc(db, 'trees', treeId, 'access', accessId);
+    await deleteDoc(ref);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function revokeAccessInFirestore(
+  treeId: string,
+  accessId: string,
+  currentUser: User | null
+): Promise<void> {
+  if (!currentUser) return;
+  const path = `trees/${treeId}/access/${accessId}`;
+  try {
+    const ref = doc(db, 'trees', treeId, 'access', accessId);
+    await setDoc(ref, { revoked: true, updatedAt: Date.now() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export function subscribeToAccessList(
   treeId: string, 
   onUpdate: (list: BranchAccess[]) => void

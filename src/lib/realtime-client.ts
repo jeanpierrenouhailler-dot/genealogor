@@ -13,6 +13,10 @@ class RealtimeClient {
   private isConnected: boolean = false;
   private reconnectTimer: any = null;
 
+  public get connected(): boolean {
+    return this.isConnected;
+  }
+
   constructor() {
     this.clientId = 'client-' + Math.random().toString(36).substring(2, 9);
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
