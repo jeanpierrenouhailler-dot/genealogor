@@ -1,0 +1,136 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+
+// Mock localStorage and window in Node/Vitest environment
+const mockStorage: Record<string, string> = {};
+const mockLocalStorage = {
+  getItem: (key: string) => mockStorage[key] || null,
+  setItem: (key: string, val: string) => { mockStorage[key] = val; },
+  removeItem: (key: string) => { delete mockStorage[key]; },
+  clear: () => { Object.keys(mockStorage).forEach(k => delete mockStorage[k]); },
+  key: (i: number) => Object.keys(mockStorage)[i] || null,
+  length: 0,
+} as any;
+
+(global as any).localStorage = mockLocalStorage;
+(global as any).window = {
+  localStorage: mockLocalStorage,
+};
+
+import { 
+  slugifyTreeId, 
+  isValidTreeId, 
+  getKnownTrees, 
+  saveKnownTrees, 
+  recordKnownTree, 
+  removeKnownTreeFromLocal,
+  getStoredCurrentRoom,
+  setStoredCurrentRoom,
+  DEFAULT_SAMPLE_TREE
+} from '../tree-manager';
+
+describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
+  beforeEach(() => {
+    mockLocalStorage.clear();
+  });
+
+  describe('slugifyTreeId', () => {
+    it('doit normaliser les accents et caractères spéciaux en identifiant valide', () => {
+      expect(slugifyTreeId('Famille Éléonore de Kerguélen')).toBe('famille-eleonore-de-kerguelen');
+      expect(slugifyTreeId('Arbre Bernard & Associés - 1850!')).toBe('arbre-bernard-associes-1850');
+      expect(slugifyTreeId('   L\'Hôpital-Camfrout 1789   ')).toBe('l-hopital-camfrout-1789');
+    });
+
+    it('doit retourner un slug par défaut si la chaîne ne contient aucun caractère valide', () => {
+      expect(slugifyTreeId('   ***   ')).toBe('arbre-sans-titre');
+      expect(slugifyTreeId('')).toBe('arbre-sans-titre');
+    });
+  });
+
+  describe('isValidTreeId', () => {
+    it('doit valider les identifiants conformes aux contraintes Firestore et WebSocket', () => {
+      expect(isValidTreeId('famille-martin-1742')).toBe(true);
+      expect(isValidTreeId('arbre_dupont_1850')).toBe(true);
+      expect(isValidTreeId('lignee123')).toBe(true);
+      expect(isValidTreeId('famille-bernard')).toBe(true);
+    });
+
+    it('doit rejeter les identifiants trop courts, trop longs ou avec caractères interdits', () => {
+      expect(isValidTreeId('ab')).toBe(false); // Trop court (< 3)
+      expect(isValidTreeId('')).toBe(false);
+      expect(isValidTreeId('arbre with spaces')).toBe(false);
+      expect(isValidTreeId('famille/dupont')).toBe(false);
+      expect(isValidTreeId('arbre?room=123')).toBe(false);
+      expect(isValidTreeId('a'.repeat(65))).toBe(false); // Trop long (> 64)
+    });
+  });
+
+  describe('Persistance et historique des arbres connus (KnownTrees)', () => {
+    it('doit inclure l\'arbre de démonstration par défaut', () => {
+      const trees = getKnownTrees();
+      expect(trees.length).toBeGreaterThanOrEqual(1);
+      expect(trees[0].id).toBe(DEFAULT_SAMPLE_TREE.id);
+      expect(trees[0].isSample).toBe(true);
+    });
+
+    it('doit enregistrer un nouvel arbre et le placer en tête de liste', () => {
+      recordKnownTree({
+        id: 'famille-bernard-1830',
+        title: 'Famille Bernard d\'Auvergne',
+        personCount: 42,
+      });
+
+      const updated = getKnownTrees();
+      expect(updated.length).toBe(2);
+      expect(updated[0].id).toBe('famille-bernard-1830');
+      expect(updated[0].title).toBe('Famille Bernard d\'Auvergne');
+      expect(updated[0].personCount).toBe(42);
+    });
+
+    it('doit mettre à jour un arbre existant sans créer de doublon', () => {
+      recordKnownTree({
+        id: 'famille-bernard-1830',
+        title: 'Famille Bernard',
+        personCount: 10,
+      });
+
+      recordKnownTree({
+        id: 'famille-bernard-1830',
+        title: 'Famille Bernard (Mise à jour)',
+        personCount: 15,
+      });
+
+      const trees = getKnownTrees();
+      const bernardTrees = trees.filter(t => t.id === 'famille-bernard-1830');
+      expect(bernardTrees.length).toBe(1);
+      expect(bernardTrees[0].title).toBe('Famille Bernard (Mise à jour)');
+      expect(bernardTrees[0].personCount).toBe(15);
+    });
+
+    it('doit supprimer un arbre de l\'historique local sans supprimer l\'arbre de démonstration', () => {
+      recordKnownTree({
+        id: 'famille-temporaire',
+        title: 'Arbre temporaire',
+      });
+
+      expect(getKnownTrees().some(t => t.id === 'famille-temporaire')).toBe(true);
+
+      const afterDelete = removeKnownTreeFromLocal('famille-temporaire');
+      expect(afterDelete.some(t => t.id === 'famille-temporaire')).toBe(false);
+
+      // L'arbre d'exemple ne peut être supprimé
+      const afterSampleDelete = removeKnownTreeFromLocal(DEFAULT_SAMPLE_TREE.id);
+      expect(afterSampleDelete.some(t => t.id === DEFAULT_SAMPLE_TREE.id)).toBe(true);
+    });
+  });
+
+  describe('Gestion du salon actif (StoredCurrentRoom)', () => {
+    it('doit retourner le salon par défaut si rien n\'est stocké', () => {
+      expect(getStoredCurrentRoom()).toBe(DEFAULT_SAMPLE_TREE.id);
+    });
+
+    it('doit mémoriser et restituer le salon actif sélectionné', () => {
+      setStoredCurrentRoom('arbre-breton-2024');
+      expect(getStoredCurrentRoom()).toBe('arbre-breton-2024');
+    });
+  });
+});

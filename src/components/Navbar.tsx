@@ -1,8 +1,7 @@
-import React from 'react';
 import { 
   Share2, Users, Shield, BookOpen, Clock, MapPin, BarChart3, 
   GitFork, LogIn, LogOut, CloudCheck, Cloud, Menu, Moon, Sun, 
-  Settings, Download
+  Settings, Download, FolderTree
 } from 'lucide-react';
 import { BranchAccess, BranchRole } from '../types/genealogy';
 import { User as FirebaseUser } from 'firebase/auth';
@@ -10,7 +9,19 @@ import { Logo } from './Logo';
 import { ThemeMode } from '../lib/theme';
 import { PwaInstallButton } from './PwaInstallButton';
 
-export type ActiveTab = 'tree' | 'profile' | 'archives' | 'timeline' | 'map' | 'stats';
+export type ActiveTab = 
+  | 'tree' 
+  | 'profile' 
+  | 'archives' 
+  | 'timeline' 
+  | 'map' 
+  | 'stats'
+  | 'ancestors' 
+  | 'descendants' 
+  | 'implex' 
+  | 'validation' 
+  | 'compare' 
+  | 'graph';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -19,6 +30,7 @@ interface NavbarProps {
   onOpenExportModal: () => void;
   onOpenHamburgerMenu: () => void;
   onOpenSystemSettings: () => void;
+  onOpenTreeManager?: () => void;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
   currentAccess?: BranchAccess;
@@ -40,6 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenExportModal,
   onOpenHamburgerMenu,
   onOpenSystemSettings,
+  onOpenTreeManager,
   themeMode,
   onToggleTheme,
   currentAccess,
@@ -94,6 +107,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
               <span>Arbre démo</span>
               <span className="text-amber-800 dark:text-amber-400 underline text-[10px] ml-0.5 font-normal hover:text-amber-950">Effacer</span>
+            </button>
+          )}
+
+          {onOpenTreeManager && (
+            <button
+              type="button"
+              onClick={onOpenTreeManager}
+              title="Changer d'arbre ou créer un nouvel arbre généalogique"
+              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-700 dark:text-stone-300 hover:text-amber-900 dark:hover:text-amber-200 hover:bg-stone-200/50 dark:hover:bg-stone-800 border border-stone-200/80 dark:border-stone-800 transition-colors cursor-pointer"
+            >
+              <FolderTree className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+              <span className="truncate max-w-[130px] font-medium">{treeTitle}</span>
+              <span className="text-[10px] text-stone-400 font-mono">▾</span>
             </button>
           )}
         </div>

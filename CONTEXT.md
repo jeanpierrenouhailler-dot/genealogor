@@ -194,6 +194,28 @@ interface ArchiveDocument {
   - Infobulles `InfoTooltip.tsx` sur les zones techniques (Sosa, calendrier républicain, anonymisation contemporains, cotes d'archives).
   - Contrôle global : possibilité de désactiver l'ensemble des aides contextuelles depuis les paramètres système.
 
+### ADR-12 : Gestionnaire Multi-Arbres & Sélecteur Visuel Dédié
+- **Contexte** : Permettre aux généalogistes de travailler sur plusieurs familles ou généalogies distinctes (famille paternelle, famille par alliance, recherches pour des amis) sans devoir manipuler manuellement les paramètres d'URL (`?room=...`), tout en conservant une stricte étanchéité des données tant en local que sur Google Cloud Firestore.
+- **Décision** :
+  - **Partitionnement strict des données** : Chaque arbre possède un identifiant slugifié unique (`treeId`) servant d'espace de nommage dans Google Cloud Firestore (`/trees/{treeId}`, `/trees/{treeId}/archives`, `/trees/{treeId}/access`) et de canal de diffusion WebSocket (`roomId`).
+  - **Sélecteur visuel accessible partout** :
+    1. Carte d'état de l'arbre actif en haut du menu Hamburger avec bouton proéminent « Créer / Changer d'arbre ».
+    2. Bouton d'accès rapide dans la barre de navigation supérieure (desktop).
+    3. Option dédiée dans la section *Données & Sauvegardes*.
+  - **Dialogue modal à deux onglets (`TreeManagerModal.tsx`)** :
+    - *« Mes Arbres »* : Liste filtrable par recherche des arbres connus avec métadonnées (titre, salle, nombre d'individus, nombre d'archives, date de dernière visite), bouton de rafraîchissement depuis Firestore, suppression de l'historique local et dialogue pour rejoindre un arbre tiers via son identifiant.
+    - *« Créer un nouvel arbre »* : Formulaire de création avec slugification automatique et validation stricte (`^[a-zA-Z0-9_\-]+$`), choix entre un arbre vierge ou une copie indépendante de l'arbre modèle Martin.
+### ADR-13 : Visualisations Avancées, Métriques d'Implexe, Contrôle Qualité et Référentiel des Archives Départementales
+- **Contexte** : Intégrer les meilleures fonctionnalités issues du projet `nouhailler/genealogor` afin d'enrichir l'analyse démographique, la navigation multidimensionnelle et l'aide à la recherche en archives.
+- **Décision** :
+  - **Éventail d'ascendance Sosa (`FanChartView.tsx`)** : Rendu vectoriel SVG paramétrable avec calcul géométrique d'angles et de rayons jusqu'à 8 générations, coloration selon le genre ou le taux d'implexe, zoom/pan fluide et modes alternatifs (Pedigree rectangulaire 7 générations et vue Sablier ascendance + descendance).
+  - **Arbre de descendance repliable d'Aboville (`DescendantsView.tsx`)** : Calcul récursif de la numérotation hiérarchique d'Aboville (`1`, `1.1`, `1.2`), badge de numérotation, détection des branches mortes (individus sans postérité) et commandes de déploiement global.
+  - **Calcul d'implexe & d'endogamie (`implex.ts` & `ImplexView.tsx`)** : Calcul de la perte d'ancêtres théoriques vs réels par génération ($G0$ à $G8+$), coefficient d'implexe global, identification des ancêtres répétés et liste de leurs numéros Sosa multiples.
+  - **Contrôle qualité & détection de cycles (`validation-checker.ts` & `ValidationView.tsx`)** : Algorithme DFS de détection de boucles généalogiques (ancêtre devenant son propre descendant), détection des anomalies chronologiques (décès antérieur à la naissance, longévité > 120 ans, procréation < 12 ans ou > 70 ans), et jauge de complétude des données.
+  - **Comparateur de fiches individuelles (`CompareView.tsx`)** : Comparaison côte à côte de deux individus avec mise en évidence des champs identiques, divergents ou manquants.
+  - **Graphe relationnel D3 (`ForceGraphView.tsx`)** : Simulation de forces D3 (forces de lien, charge répulsive, centrage), manipulation tactile / drag & drop, et filtres d'arêtes (filiations directes, unions maritales ou réseau global).
+  - **Référentiel des 97 Archives Départementales & Détection INSEE (`place-gazetteer.ts`, `archives-templates.ts`, `DepartmentDirectoryModal.tsx`)** : Référentiel complet des 101 départements français métropolitains et d'outre-mer avec détection intelligente des lieux (code postal, département, alias historiques d'Ancien Régime ou pré-1968), portail de recherche directe vers les archives départementales et passerelle de requêtes vers Geneanet, FamilySearch, Filae, Gallica BnF et Wikidata.
+
 ---
 
 ## 4. Matrice des Rôles & Permissions
@@ -207,11 +229,12 @@ interface ArchiveDocument {
 
 ---
 
-## 5. Bilan des 6 Piliers de Qualité & Conformité (114 Tests Validés)
+## 5. Bilan des Piliers de Qualité & Conformité (144 Tests Validés)
 
-1. **Règles Firestore & Isolation** : Vérifiées, testées et déployées en production avec modèle ABAC zéro-trust.
-2. **Mode Hors-Ligne & Résilience** : Gestionnaire de stockage versionné, détection de corruption avec backup d'urgence et file d'attente hors-ligne.
+1. **Règles Firestore & Isolation** : Vérifiées, testées et déployées en production avec modèle ABAC zéro-trust et étanchéité multi-arbres (`/trees/{treeId}`).
+2. **Mode Hors-Ligne & Résilience** : Gestionnaire de stockage versionné, détection de corruption avec backup d'urgence, file d'attente hors-ligne et gestion multi-arbres locale (`tree-manager.ts`).
 3. **Chiffrement Réel des Sauvegardes** : AES-GCM 256 bits, dérivation PBKDF2 (100k itérations), empreinte SHA-256 et annulation de restauration sécurisée.
 4. **GEDCOM Multi-Logiciels** : Compatibilité certifiée avec Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch (sources, médias, familles recomposées, dates approximatives).
 5. **Confidentialité Étendue des Vivants** : Anonymisation des individus de moins de 100 ans appliquée sur l'arbre, les fiches, les archives, le photo tagging, les recherches et les flux temps réel.
-6. **Tests Automatisés & Build** : 114 tests unitaires automatisés validés sous Vitest (11 suites de tests couvrant 100% des exigences P0 et P1), avec compilation de production réussie.
+6. **Analyses Généalogiques & Outils Avancés** : Éventail Sosa, numérotation d'Aboville, calcul de perte d'ancêtres (implexe), détection de cycles DFS, détection automatique des départements INSEE et répertoire des 97 Archives Départementales.
+7. **Tests Automatisés & Build** : 144 tests unitaires automatisés validés sous Vitest (17 suites de tests couvrant 100% des exigences), avec compilation de production réussie.

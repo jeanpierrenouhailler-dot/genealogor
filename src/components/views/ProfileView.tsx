@@ -1,11 +1,12 @@
-import React from 'react';
 import { 
   User, Calendar, MapPin, Briefcase, FileText, Heart, 
   Users, Edit3, ArrowLeft, BookOpen, Shield, Award,
-  Camera, Tag, ExternalLink
+  Camera, Tag, ExternalLink, Building2, Globe
 } from 'lucide-react';
 import { GenealogyData, Individual, ArchiveDocument } from '../../types/genealogy';
 import { computeSosaNumbers } from '../../lib/sosa-aboville';
+import { extractDept, deptName, region } from '../../lib/place-gazetteer';
+import { linksFor, deptArchives } from '../../lib/archives-templates';
 
 interface ProfileViewProps {
   personId: string;
@@ -17,6 +18,7 @@ interface ProfileViewProps {
   onSelectArchive: (archiveId: string) => void;
   onAddNewPerson?: () => void;
   onOpenImportModal?: () => void;
+  onOpenDeptDirectory?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -29,6 +31,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSelectArchive,
   onAddNewPerson,
   onOpenImportModal,
+  onOpenDeptDirectory,
 }) => {
   const person = data.individuals[personId] || Object.values(data.individuals)[0];
 
@@ -427,6 +430,83 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Recherche d'Archives & Salles de Lecture Numériques */}
+          {(() => {
+            const primaryPlace = person.birth?.place || person.death?.place || '';
+            const detectedDept = extractDept(primaryPlace);
+            const detectedDeptName = detectedDept ? deptName(detectedDept) : null;
+            const detectedRegion = detectedDept ? region(detectedDept) : null;
+            const adEntry = deptArchives(detectedDept);
+            const researchLinks = linksFor({ person, place: primaryPlace });
+
+            return (
+              <div className="bg-white border border-stone-200/90 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-semibold uppercase tracking-wider font-mono text-stone-500 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-amber-800" />
+                    <span>Recherche d'Archives & Salles en Ligne</span>
+                  </h2>
+                  {onOpenDeptDirectory && (
+                    <button
+                      onClick={onOpenDeptDirectory}
+                      className="text-xs text-amber-800 hover:underline font-medium flex items-center gap-1"
+                    >
+                      <span>Annuaire des 97 AD</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {detectedDept && (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5">
+                      <span className="size-6 rounded-md bg-amber-200 text-amber-900 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                        {detectedDept}
+                      </span>
+                      <div>
+                        <div className="font-semibold text-stone-900">
+                          {detectedDeptName} {detectedRegion ? `(${detectedRegion})` : ''}
+                        </div>
+                        <div className="text-[11px] text-stone-500 font-mono">
+                          Département détecté d'après : {primaryPlace}
+                        </div>
+                      </div>
+                    </div>
+                    {adEntry && (
+                      <a
+                        href={adEntry.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-950 text-white font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 transition-colors shadow-2xs"
+                      >
+                        <span>{adEntry.label}</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                  {researchLinks.filter(l => l.kind === 'portal').map((link) => (
+                    <a
+                      key={link.source}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-lg border border-stone-200 hover:border-amber-700 hover:bg-amber-50/40 text-stone-700 hover:text-stone-900 flex items-center justify-between transition-colors group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-3.5 h-3.5 text-stone-400 group-hover:text-amber-800 shrink-0" />
+                        <span className="font-medium truncate">{link.label}</span>
+                      </div>
+                      <ExternalLink className="w-3 h-3 text-stone-400 group-hover:text-amber-800 shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Notes biographiques */}
           {person.notes && person.notes.length > 0 && (

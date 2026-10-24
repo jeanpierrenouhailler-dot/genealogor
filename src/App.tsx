@@ -15,7 +15,16 @@ import { HamburgerMenu } from './components/HamburgerMenu';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { OnboardingModal, hasAcceptedOnboarding } from './components/OnboardingModal';
 import { ContextualGuide } from './components/ContextualGuide';
+import { TreeManagerModal } from './components/TreeManagerModal';
+import { FanChartView } from './components/views/FanChartView';
+import { DescendantsView } from './components/views/DescendantsView';
+import { ImplexView } from './components/views/ImplexView';
+import { ValidationView } from './components/views/ValidationView';
+import { CompareView } from './components/views/CompareView';
+import { ForceGraphView } from './components/views/ForceGraphView';
+import { DepartmentDirectoryModal } from './components/views/DepartmentDirectoryModal';
 import { getStoredTheme, applyTheme, toggleTheme, ThemeMode } from './lib/theme';
+import { getStoredCurrentRoom, setStoredCurrentRoom, recordKnownTree } from './lib/tree-manager';
 
 import { GenealogyData, Individual, ArchiveDocument, BranchAccess, BranchRole, BranchScope } from './types/genealogy';
 import { getSampleGenealogy, createEmptyGenealogy, isSampleGenealogy } from './lib/sample-data';
@@ -100,6 +109,8 @@ export default function App() {
   const [isHamburgerOpen, setIsHamburgerOpen] = useState(false);
   const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => !hasAcceptedOnboarding());
+  const [isTreeManagerOpen, setIsTreeManagerOpen] = useState(false);
+  const [isDeptDirectoryOpen, setIsDeptDirectoryOpen] = useState(false);
 
   // Thème Sombre / Clair / Système
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredTheme());
@@ -125,8 +136,15 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState<boolean>(true);
   const [pendingBranchAccess, setPendingBranchAccess] = useState<BranchAccess | null>(null);
 
-  // Real-time synchronization state
-  const [roomId, setRoomId] = useState<string>('famille-martin-1742');
+  // Real-time synchronization state & Active tree room
+  const [roomId, setRoomId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) return roomParam;
+    }
+    return getStoredCurrentRoom();
+  });
   const [connectedPeerCount, setConnectedPeerCount] = useState<number>(1);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -135,6 +153,56 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Changement / Création d'arbre généalogique fluide
+  const handleSwitchTree = async (newRoomId: string, newTitle?: string, initialData?: GenealogyData) => {
+    if (!newRoomId) return;
+    setRoomId(newRoomId);
+    setStoredCurrentRoom(newRoomId);
+
+    // Mettre à jour l'URL sans recharger brutalement la page
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', newRoomId);
+      url.searchParams.delete('token');
+      url.searchParams.delete('branch');
+      url.searchParams.delete('role');
+      window.history.pushState({}, '', url.toString());
+    }
+
+    // Réinitialiser le périmètre de consultation
+    setCurrentBranchScope('all');
+    setUserRole('admin');
+    setIsUnlocked(true);
+    setPendingBranchAccess(null);
+
+    if (initialData) {
+      setData(initialData);
+      setVersionedItem(STORAGE_KEYS.TREE, initialData);
+      setSelectedPersonId(initialData.rootPersonId || Object.keys(initialData.individuals)[0] || '');
+      if (currentUser) {
+        try {
+          await saveTreeToFirestore(newRoomId, initialData, currentUser);
+        } catch (e) {
+          console.warn('Erreur synchronisation Firestore nouvel arbre:', e);
+        }
+      }
+      recordKnownTree({
+        id: newRoomId,
+        title: newTitle || initialData.sourceHeader || newRoomId,
+        personCount: Object.keys(initialData.individuals).length,
+        lastOpenedAt: Date.now(),
+      });
+      showToast(`Arbre créé et activé : ${newTitle || initialData.sourceHeader || newRoomId}`);
+    } else {
+      recordKnownTree({
+        id: newRoomId,
+        title: newTitle || newRoomId,
+        lastOpenedAt: Date.now(),
+      });
+      showToast(`Arbre activé : ${newTitle || newRoomId}`);
+    }
   };
 
   // Chronological anomalies detection
@@ -752,6 +820,7 @@ export default function App() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenHamburgerMenu={() => setIsHamburgerOpen(true)}
         onOpenSystemSettings={() => setIsSystemSettingsOpen(true)}
+        onOpenTreeManager={() => setIsTreeManagerOpen(true)}
         themeMode={themeMode}
         onToggleTheme={handleToggleTheme}
         currentAccess={accessList.find(a => a.branch === currentBranchScope)}
@@ -844,6 +913,78 @@ export default function App() {
             }}
             onAddNewPerson={handleCreateNewPerson}
             onOpenImportModal={() => setIsExportModalOpen(true)}
+            onOpenDeptDirectory={() => setIsDeptDirectoryOpen(true)}
+          />
+        )}
+
+        {activeTab === 'ancestors' && (
+          <FanChartView
+            rootPerson={effectiveData.individuals[selectedPersonId] || Object.values(effectiveData.individuals)[0]}
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
+          />
+        )}
+
+        {activeTab === 'descendants' && (
+          <DescendantsView
+            rootPerson={effectiveData.individuals[selectedPersonId] || Object.values(effectiveData.individuals)[0]}
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
+          />
+        )}
+
+        {activeTab === 'implex' && (
+          <ImplexView
+            rootPerson={effectiveData.individuals[selectedPersonId] || Object.values(effectiveData.individuals)[0]}
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
+          />
+        )}
+
+        {activeTab === 'validation' && (
+          <ValidationView
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
+          />
+        )}
+
+        {activeTab === 'compare' && (
+          <CompareView
+            person={effectiveData.individuals[selectedPersonId] || Object.values(effectiveData.individuals)[0]}
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
+          />
+        )}
+
+        {activeTab === 'graph' && (
+          <ForceGraphView
+            individuals={effectiveData.individuals}
+            families={effectiveData.families}
+            selectedPersonId={selectedPersonId}
+            onSelectPerson={(id) => {
+              setSelectedPersonId(id);
+              setActiveTab('profile');
+            }}
           />
         )}
 
@@ -998,10 +1139,33 @@ export default function App() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenSystemSettings={() => setIsSystemSettingsOpen(true)}
         onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        onOpenTreeManager={() => setIsTreeManagerOpen(true)}
+        onOpenDeptDirectory={() => setIsDeptDirectoryOpen(true)}
+        currentRoomId={roomId}
+        currentTreeTitle={data.sourceHeader || 'Famille Martin'}
+        personCount={Object.keys(data.individuals).length}
         themeMode={themeMode}
         onToggleTheme={handleToggleTheme}
         isCloudSynced={isCloudSynced}
         isWsConnected={isWsConnected}
+      />
+
+      {/* Directory of 97 French Departmental Archives Modal */}
+      <DepartmentDirectoryModal
+        isOpen={isDeptDirectoryOpen}
+        onClose={() => setIsDeptDirectoryOpen(false)}
+      />
+
+      {/* Tree Manager Modal (Créer / Changer d'Arbre) */}
+      <TreeManagerModal
+        isOpen={isTreeManagerOpen}
+        onClose={() => setIsTreeManagerOpen(false)}
+        currentRoomId={roomId}
+        currentTreeTitle={data.sourceHeader || 'Famille Martin'}
+        currentPersonCount={Object.keys(data.individuals).length}
+        currentArchiveCount={archives.length}
+        currentUser={currentUser}
+        onSwitchTree={handleSwitchTree}
       />
 
       {/* System Settings & Updates Modal */}

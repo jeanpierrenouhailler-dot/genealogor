@@ -1,9 +1,9 @@
-import React from 'react';
 import { 
   X, GitFork, Users, BookOpen, Clock, MapPin, BarChart3, 
   Share2, Shield, Download, Upload, Settings, RefreshCw, 
   Moon, Sun, HelpCircle, HardDrive, Sparkles, Tag, ChevronRight,
-  ShieldAlert, Smartphone, Database, Check
+  ShieldAlert, Smartphone, Database, Check, FolderTree,
+  Layers, Network, ShieldCheck, Columns, Building2
 } from 'lucide-react';
 import { ActiveTab } from './Navbar';
 import { Logo } from './Logo';
@@ -20,6 +20,11 @@ interface HamburgerMenuProps {
   onOpenExportModal: () => void;
   onOpenSystemSettings: () => void;
   onOpenOnboarding: () => void;
+  onOpenTreeManager: () => void;
+  onOpenDeptDirectory?: () => void;
+  currentRoomId: string;
+  currentTreeTitle: string;
+  personCount?: number;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
   isCloudSynced: boolean;
@@ -35,6 +40,11 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
   onOpenExportModal,
   onOpenSystemSettings,
   onOpenOnboarding,
+  onOpenTreeManager,
+  onOpenDeptDirectory,
+  currentRoomId,
+  currentTreeTitle,
+  personCount,
   themeMode,
   onToggleTheme,
   isCloudSynced,
@@ -80,6 +90,42 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
         {/* Scrollable Categories Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6 text-sm">
           
+          {/* SECTION DÉDIÉE : SÉLECTEUR VISUEL D'ARBRE ACTIF */}
+          <div className="p-3.5 bg-linear-to-br from-amber-50/90 to-stone-100/90 dark:from-stone-900/90 dark:to-stone-950/90 rounded-2xl border border-amber-200/90 dark:border-amber-900/50 shadow-2xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-900 dark:text-amber-400 flex items-center gap-1.5">
+                <FolderTree className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                Arbre en cours
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 truncate max-w-[130px]">
+                {currentRoomId}
+              </span>
+            </div>
+
+            <div>
+              <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 truncate">
+                {currentTreeTitle || 'Famille Martin'}
+              </h3>
+              {personCount !== undefined && (
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 font-mono mt-0.5">
+                  {personCount} personne(s) répertoriée(s)
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenTreeManager();
+              }}
+              className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-amber-900 hover:bg-amber-950 dark:bg-amber-800 dark:hover:bg-amber-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <FolderTree className="w-4 h-4" />
+              <span>Créer / Changer d'Arbre</span>
+            </button>
+          </div>
+
           {/* CATÉGORIE 1 : EXPLORATION GÉNÉALOGIQUE */}
           <div className="space-y-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-400 flex items-center gap-1.5 px-2">
@@ -88,6 +134,22 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
             </span>
 
             <div className="space-y-1 bg-white/70 dark:bg-stone-900/40 p-1.5 rounded-xl border border-stone-200/70 dark:border-stone-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenTreeManager();
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300 transition-colors cursor-pointer text-xs"
+              >
+                <div className="flex items-center gap-2.5">
+                  <FolderTree className="w-4 h-4 text-amber-800 dark:text-amber-400" />
+                  <span>Gestionnaire Multi-Arbres</span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+                  Changer
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => navigateTo('tree')}
@@ -100,6 +162,62 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
                   <span>Arbre & Ascendance (Sosa)</span>
                 </div>
                 {activeTab === 'tree' && <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('ancestors')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'ancestors' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>Éventail Sosa & Pedigree</span>
+                </div>
+                {activeTab === 'ancestors' && <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('descendants')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'descendants' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <GitFork className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Descendance d'Aboville</span>
+                </div>
+                {activeTab === 'descendants' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('graph')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'graph' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Network className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Graphe Relationnel D3</span>
+                </div>
+                {activeTab === 'graph' && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('compare')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'compare' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Columns className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Comparateur de Fiches</span>
+                </div>
+                {activeTab === 'compare' && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
               </button>
 
               <button
@@ -153,14 +271,71 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <BarChart3 className="w-4 h-4 text-stone-600 dark:text-stone-400" />
-                  <span>Statistiques & Détection d'Anomalies</span>
+                  <span>Statistiques Démographiques</span>
                 </div>
                 {activeTab === 'stats' && <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />}
               </button>
             </div>
           </div>
 
-          {/* CATÉGORIE 2 : ARCHIVES & PALÉOGRAPHIE */}
+          {/* CATÉGORIE 2 : ANALYSES, ENDOGAMIE & QUALITÉ */}
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-400 flex items-center gap-1.5 px-2">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Analyses, Implexe & Qualité
+            </span>
+
+            <div className="space-y-1 bg-white/70 dark:bg-stone-900/40 p-1.5 rounded-xl border border-stone-200/70 dark:border-stone-800/80">
+              <button
+                type="button"
+                onClick={() => navigateTo('implex')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'implex' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Network className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                  <span>Calcul d'Implexe & Endogamie</span>
+                </div>
+                {activeTab === 'implex' && <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('validation')}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-colors cursor-pointer ${
+                  activeTab === 'validation' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-semibold' : 'hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-red-700 dark:text-red-400" />
+                  <span>Contrôle Qualité & Cycles</span>
+                </div>
+                {activeTab === 'validation' && <span className="w-1.5 h-1.5 rounded-full bg-red-600" />}
+              </button>
+
+              {onOpenDeptDirectory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenDeptDirectory();
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/60 text-stone-700 dark:text-stone-300 transition-colors cursor-pointer text-xs"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4 text-amber-800 dark:text-amber-400" />
+                    <span>Archives Départementales (97)</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+                    Portails
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* CATÉGORIE 3 : ARCHIVES & PALÉOGRAPHIE */}
           <div className="space-y-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-400 flex items-center gap-1.5 px-2">
               <BookOpen className="w-3.5 h-3.5" />

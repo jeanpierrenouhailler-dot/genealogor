@@ -3,6 +3,64 @@
 Toutes les modifications notables apportées au projet **Genealogor** sont consignées dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.7.0] — 2026-10-23
+
+### 🌟 Ajouté — Intégration des Meilleures Fonctionnalités du Dépôt GitHub (nouhailler/genealogor)
+- **🌀 Éventail d'Ascendance Sosa (Fan Chart) & Pedigree 7 Générations (`FanChartView.tsx`)** :
+  - Visualisation en éventail géométrique SVG haute précision avec codes couleurs pour les lignées paternelle (bleu), maternelle (rose) et ancêtres implexés (or).
+  - Bascule instantanée entre Éventail circulaire, tableau Pedigree rectangulaire (7 générations) et vue Sablier (ascendance et descendance réunies autour du pivot).
+  - Sélecteur de profondeur de 4 à 7 générations avec zoom et recentrage.
+- **🌿 Descendance Repliable d'Aboville (`DescendantsView.tsx` & `descendance.ts`)** :
+  - Arbre de descendance hiérarchique dépliable/repliable avec numérotation standard d'Aboville (`1`, `1.1`, `1.2`, `1.1.1`...).
+  - Détection automatique et mise en évidence des branches éteintes (individus sans postérité).
+  - Calcul de l'espérance de vie par cohorte de décennies (`computeCohortLifeExpectancy`).
+- **🧬 Calculateur d'Implexe & Taux d'Endogamie (`ImplexView.tsx` & `implex.ts`)** :
+  - Calcul du taux global d'endogamie et de la perte d'ancêtres théoriques.
+  - Statistiques de complétude et taux d'endogamie détaillés par génération (G0 à G8+).
+  - Répertoire complet des ancêtres implexés apparaissant sur de multiples branches avec leurs numéros Sosa respectifs.
+- **🛡️ Contrôle Qualité, Détection des Cycles & Complétude (`ValidationView.tsx` & `validation-checker.ts`)** :
+  - Algorithme de détection des cycles généalogiques interdits (parcours DFS avec pile de détection de boucles d'ascendance).
+  - Détection des incohérences chronologiques : décès antérieur à la naissance, longévité > 120 ans, âge parental impossible (< 12 ans ou après décès de la mère).
+  - Indicateurs de complétude par champ (dates de naissance/décès, lieux, filiations, professions) et score global de qualité.
+- **⚖️ Comparateur Différentiel de Fiches Individuelles (`CompareView.tsx`)** :
+  - Outil de comparaison côte à côte de deux individus de l'arbre pour détecter les homonymies, doublons potentiels et recoupements de dates.
+  - Mise en évidence visuelle instantanée des critères parfaitement concordants.
+- **🕸️ Graphe Relationnel D3 & Physique Interactive (`ForceGraphView.tsx`)** :
+  - Simulation de forces relationnelles propulsée par `d3` (forceLink, forceManyBody, forceCenter, forceCollide).
+  - Filtre interactif des liens : filiations directes (parents-enfants), mariages (conjoints) ou tous liens.
+  - Support du zoom panoramique, glisser-déposer des nœuds (drag & drop) et navigation directe vers les fiches.
+- **🏛️ Répertoire des 97 Archives Départementales & Détection INSEE (`place-gazetteer.ts`, `archives-templates.ts`, `DepartmentDirectoryModal.tsx`)** :
+  - Moteur de reconnaissance toponymique des 101 départements français avec extraction par code postal (5 chiffres), nom de département actuel, nom pré-réforme/historique (ex: *Loire-Inférieure, Basses-Pyrénées*) ou code entre parenthèses.
+  - Modale interactive « Annuaire des 97 Archives Départementales » avec filtrage par région et recherche en direct.
+  - Intégration dans les fiches individuelles (`ProfileView.tsx`) de liens directs pré-remplis vers les salles de lecture des AD et les grands portails de recherche (Geneanet, FamilySearch, Filae, Gallica BnF, Wikidata).
+- **🧪 144 Tests Automatisés (17 Suites de Tests) sous Vitest** :
+  - 20 nouveaux tests unitaires validant le gazetteer toponymique, les templates d'archives, l'implexe, la descendance d'Aboville et la détection de cycles.
+  - Taux de réussite de 100 %.
+
+---
+
+## [2.6.0] — 2026-10-22
+
+### 🌟 Ajouté
+- **🌳 Sélecteur Visuel Multi-Arbres & Dialogue « Créer / Changer d'arbre »** :
+  - **Accès direct depuis le Menu Hamburger** : Carte d'état de l'arbre actif en tête de tiroir latéral avec bouton proéminent « Créer / Changer d'arbre » et entrée de navigation dédiée.
+  - **Raccourci Navbar Desktop** : Bouton d'accès rapide dans la barre supérieure affichant le titre de l'arbre actif et ouvrant directement le gestionnaire.
+  - **Dialogue modal complet (`TreeManagerModal.tsx`)** :
+    - *Onglet « Mes Arbres »* : Liste filtrable par mot-clé des arbres connus (locaux et Firestore), avec badge visuel « Actif », nombre d'individus et d'archives, bouton de rafraîchissement depuis le Cloud Firestore, suppression d'historique local et zone pour « Rejoindre par identifiant ».
+    - *Onglet « Créer un nouvel arbre »* : Formulaire de création avec slugification automatique conforme (`^[a-zA-Z0-9_\-]+$`), aperçu en temps réel de l'identifiant technique, et choix entre un arbre vierge ou une copie personnalisée de l'arbre témoin Martin.
+  - **Module métier `tree-manager.ts`** :
+    - Gestion de l'historique des arbres consultés dans `localStorage` (`genealogor_known_trees_v1`).
+    - Slugification robuste des identifiants (suppression des accents français, apostrophes, ponctuation et limitation à 64 caractères).
+    - Validation stricte des identifiants techniques et persistance de la salle courante.
+  - **Synchronisation Firestore multi-arbres (`firestore-sync.ts`)** :
+    - Fonction `listUserTreesFromFirestore` interrogeant les arbres créés par l'utilisateur connecté ou tous les arbres pour le super-administrateur.
+    - Synchronisation dynamique de l'URL sans rechargement de page (`history.pushState` avec paramètre `?room=...`).
+  - **Suite de tests automatisés (`multi-tree-manager.test.ts`)** :
+    - 10 nouveaux tests unitaires validant la slugification, la validation d'identifiant, le tri de récence, la protection de l'arbre modèle et la persistance locale.
+    - Total de la suite de tests porté à **124 tests unitaires** (12 suites, 100% de réussite).
+
+---
+
 ## [2.5.0] — 2026-10-20
 
 ### 🌟 Ajouté

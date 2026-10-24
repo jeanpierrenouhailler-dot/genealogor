@@ -3,7 +3,10 @@ import {
   setDoc, 
   collection, 
   onSnapshot, 
-  deleteDoc 
+  deleteDoc,
+  getDocs,
+  query,
+  where
 } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from './firebase';
 import { GenealogyData, ArchiveDocument, BranchAccess } from '../types/genealogy';
@@ -208,3 +211,53 @@ export function subscribeToAccessList(
     handleFirestoreError(error, OperationType.LIST, path);
   });
 }
+
+export interface TreeFirestoreSummary {
+  id: string;
+  title: string;
+  ownerId?: string;
+  ownerEmail?: string;
+  rootPersonId?: string;
+  updatedAt?: string;
+  personCount?: number;
+}
+
+/**
+ * Récupère la liste des arbres Firestore accessibles pour l'utilisateur connecté
+ */
+export async function listUserTreesFromFirestore(
+  currentUser: User | null
+): Promise<TreeFirestoreSummary[]> {
+  if (!currentUser) return [];
+  const path = 'trees';
+  try {
+    const treesCol = collection(db, 'trees');
+    const isAdminUser = currentUser.email === 'jeanpierre.nouhailler@gmail.com';
+    const q = isAdminUser 
+      ? query(treesCol)
+      : query(treesCol, where('ownerId', '==', currentUser.uid));
+
+    const snapshot = await getDocs(q);
+    const result: TreeFirestoreSummary[] = [];
+
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      const personCount = data.individuals ? Object.keys(data.individuals).length : 0;
+      result.push({
+        id: docSnap.id,
+        title: data.title || docSnap.id,
+        ownerId: data.ownerId,
+        ownerEmail: data.ownerEmail,
+        rootPersonId: data.rootPersonId,
+        updatedAt: data.updatedAt,
+        personCount,
+      });
+    });
+
+    return result;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+

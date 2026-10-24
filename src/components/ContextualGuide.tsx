@@ -92,6 +92,67 @@ const GUIDES_DATA: Record<ActiveTab, GuideContent> = {
       { label: 'Anomalies détectées', text: 'Détecte les erreurs de saisie (décès avant naissance, parents trop jeunes ou trop âgés).' },
       { label: 'Fusions et doublons', text: 'Identifie les candidats aux doublons pour fusionner proprement sans créer d\'orphelins.' }
     ]
+  },
+  ancestors: {
+    title: 'Éventail d\'Ascendance Sosa & Tableau Pedigree',
+    badge: 'Éventail géométrique',
+    icon: <GitFork className="w-4 h-4 text-amber-700 dark:text-amber-400" />,
+    summary: 'Explorez la lignée ascendante en éventail circulaire, en tableau pedigree sur 7 générations ou en vue sablier.',
+    tips: [
+      { label: 'Sélecteur de générations', text: 'Ajustez la profondeur de 4 à 7 générations pour observer l\'ascendance complète.' },
+      { label: 'Détection de l\'implexe', text: 'Les ancêtres apparaissant sur plusieurs branches sont surlignés en ambre doré.' },
+      { label: 'Vue Sablier', text: 'Basculez sur l\'onglet Sablier pour voir simultanément les parents et la descendance directe.' }
+    ]
+  },
+  descendants: {
+    title: 'Arbre de Descendance Repliable d\'Aboville',
+    badge: 'Numérotation d\'Aboville',
+    icon: <GitFork className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />,
+    summary: 'Arbre descendant hiérarchique avec cotation d\'Aboville (1, 1.1, 1.2, 1.1.1...) pour chaque enfant et génération successive.',
+    tips: [
+      { label: 'Déplier / Replier', text: 'Cliquez sur les flèches pour inspecter chaque branche ou utilisez les boutons Tout déplier.' },
+      { label: 'Branches éteintes', text: 'Repérez immédiatement les branches sans postérité connue.' }
+    ]
+  },
+  implex: {
+    title: 'Calculateur d\'Implexe & Taux d\'Endogamie',
+    badge: 'Analyse d\'endogamie',
+    icon: <Sparkles className="w-4 h-4 text-amber-700 dark:text-amber-400" />,
+    summary: 'Mesurez la perte d\'ancêtres théoriques et le taux d\'endogamie par génération dû aux mariages consanguins ou entre cousins.',
+    tips: [
+      { label: 'Taux global', text: 'Pourcentage des cases Sosa redondantes parmi les ancêtres réels.' },
+      { label: 'Multi-occurrences', text: 'Retrouvez les ancêtres communs qui figurent sur plusieurs branches de la famille.' }
+    ]
+  },
+  validation: {
+    title: 'Contrôle Qualité & Détection d\'Incohérences',
+    badge: 'Fiabilité des données',
+    icon: <Info className="w-4 h-4 text-red-700 dark:text-red-400" />,
+    summary: 'Détectez automatiquement les cycles généalogiques impossibles, les décès avant naissance, et suivez la complétude de vos fiches.',
+    tips: [
+      { label: 'Cycles', text: 'Vérifie qu\'aucun ancêtre n\'apparaît dans sa propre descendance par erreur de liaison.' },
+      { label: 'Score de complétude', text: 'Mesure le taux de renseignement des dates, lieux, professions et filiations.' }
+    ]
+  },
+  compare: {
+    title: 'Comparateur de Fiches Individuelles',
+    badge: 'Analyse différentielle',
+    icon: <Users className="w-4 h-4 text-indigo-700 dark:text-indigo-400" />,
+    summary: 'Mettez deux personnes côte à côte pour détecter les doublons potentiels, démêler les homonymes ou vérifier des cousinages.',
+    tips: [
+      { label: 'Recherche rapide', text: 'Sélectionnez la deuxième personne avec le moteur de recherche instantané.' },
+      { label: 'Champs identiques', text: 'Les critères parfaitement concordants sont immédiatement mis en évidence en vert.' }
+    ]
+  },
+  graph: {
+    title: 'Graphe Relationnel D3 & Physique Interactive',
+    badge: 'Réseau relationnel',
+    icon: <Sparkles className="w-4 h-4 text-indigo-700 dark:text-indigo-400" />,
+    summary: 'Explorez votre famille comme un réseau organique propulsé par une simulation de physique de forces D3.',
+    tips: [
+      { label: 'Filtres de liens', text: 'Isolez les liens de filiation directe (parents-enfants) ou les liens de mariages.' },
+      { label: 'Interactivité', text: 'Glissez les nœuds pour réorganiser le graphe et double-cliquez pour recentrer.' }
+    ]
   }
 };
 

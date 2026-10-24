@@ -13,7 +13,7 @@
 [![Vite](https://img.shields.io/badge/Vite-6.2-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Firestore%20%26%20Auth-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![Tests](https://img.shields.io/badge/Tests-114%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-144%20passés%20(Vitest)-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![PWA](https://img.shields.io/badge/PWA-Installable-purple?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![Dark Mode](https://img.shields.io/badge/Theme-Sombre%20%26%20Clair-1F2937?logo=affinitydesigner&logoColor=white)](#-thème-sombre-intégral-dark-mode)
 
@@ -44,28 +44,46 @@ Alliant l'esthétique soignée d'une publication d'archive au confort des applic
 
 ### 🍔 Menu Hamburger Organisé par Catégorie
 
-Accessible depuis le coin supérieur gauche de la barre de navigation, le tiroir latéral regroupe méthodiquement les fonctionnalités de l'application en 4 grands pôles ergonomiques :
+Accessible depuis le coin supérieur gauche de la barre de navigation, le tiroir latéral regroupe méthodiquement les fonctionnalités de l'application :
 
-1. **🌿 Exploration & Visualisation** :
+- **🌳 Sélecteur visuel de l'arbre en cours** : Affiche le nom de la famille active, l'identifiant du salon (`roomId`), le nombre d'individus et un bouton d'accès rapide **« Créer / Changer d'Arbre »**.
+- **1. 🌿 Exploration & Visualisation** :
+   - Gestionnaire Multi-Arbres (bascule et création d'arbres)
    - Vue Arbre Généalogique & Ascendance Sosa
    - Fiche Biographique Individuelle & Chronologie de vie
    - Studio d'Archives & Déchiffrage Paléographique
    - Frise Historique & Repères chronologiques de France
    - Carte des Migrations & Lieux de vie
    - Statistiques Démographiques & Détection de Doublons
-2. **🤝 Partage & Collaboration** :
+- **2. 🤝 Partage & Collaboration** :
    - Partager une branche via lien privé avec mot de passe
    - Salle collaborative temps réel avec compteur de pairs connectés
    - Synchronisation Cloud Firebase Firestore
-3. **💾 Données & Sauvegardes** :
+- **3. 💾 Données & Sauvegardes** :
    - Importer / Exporter au standard GEDCOM 5.5.1
    - Sauvegarde intégrale chiffrée en AES-GCM 256 bits avec dérivation PBKDF2
    - Restauration sécurisée avec sauvegarde préalable d'annulation
-4. **⚙️ Paramètres Système & Accessibilité** :
+- **4. ⚙️ Paramètres Système & Accessibilité** :
    - Paramètres système, version et mises à jour
    - Guide d'accueil, mentions légales et clause de non-responsabilité
    - Bascule du Thème (Clair, Sombre, Automatique selon le système)
    - Installer l'application sur le téléphone ou l'ordinateur (PWA)
+
+---
+
+### 🌳 Gestionnaire Multi-Arbres & Sélecteur Visuel (« Créer / Changer d'Arbre »)
+
+Genealogor permet d'héberger et de naviguer entre **plusieurs arbres généalogiques distincts et hermétiques** sans avoir à manipuler manuellement l'URL :
+
+- **Boîte de dialogue visuelle dédiée (`TreeManagerModal.tsx`)** :
+  - **Onglet « Mes Arbres »** : Liste tous les arbres connus localement et distants dans Google Cloud Firestore, avec recherche instantanée, décompte d'individus, badge d'arbre actif et bouton d'ouverture immédiate.
+  - **Rejoindre par identifiant** : Saisie directe d'un identifiant de salon partagé par un proche (`famille-dupont-1850`).
+  - **Onglet « Créer un nouvel arbre »** :
+    - Saisie du nom de famille ou titre (ex : *Famille Bernard*, *Lignée de Keravel*).
+    - Génération automatique du slug d'URL et de Firestore conforme aux règles de sécurité (`^[a-zA-Z0-9_\-]+$`).
+    - Choix du point de départ : **Arbre Vierge** (pour partir de zéro ou importer un GEDCOM) ou **Copie de l'arbre d'exemple Martin** (pour s'entraîner).
+- **Cloisonnement total garanti** :
+  - Chaque arbre dispose de sa propre racine Firestore `/trees/{treeId}`, de sa sous-collection d'archives `/trees/{treeId}/archives`, de ses règles d'accès `/trees/{treeId}/access` et de son salon WebSocket indépendant.
 
 ---
 
@@ -151,30 +169,36 @@ Pour les utilisateurs novices ou nomades explorant les fonds d'archives départe
 | **3. Chiffrement des Sauvegardes** | Sauvegardes complètes au format `.genealogor.json` protégées en **AES-GCM 256 bits** avec dérivation **PBKDF2** (100k itérations), contrôle d'intégrité **SHA-256** et sauvegarde de secours pré-restauration. | ✅ Validé avec tests de mauvaises phrases et intégrité |
 | **4. Compatibilité GEDCOM Multi-Logiciels** | Standard GEDCOM 5.5.1 testé avec les exports de **Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch**. Prise en charge des familles recomposées, conjoints multiples, dates approximatives (`VERS`, `BET`, `AVANT`, `APRES`), sources et médias `OBJE`. | ✅ Validé en aller-retour (round-trip) sans perte |
 | **5. Confidentialité des Personnes Vivantes** | Protection active des contemporains (< 100 ans ou sans date de décès). Anonymisation étanche (`[Privé]`, `[Confidentiel]`, suppression des notes et des lieux précis) appliquée sur toutes les vues, les recherches, les exports, les archives et le temps réel. | ✅ Validé de bout en bout |
-| **6. Tests Automatisés & Build** | Suite complète de 114 tests unitaires et d'intégration couvrant 11 modules critiques (P0/P1 sécurité, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, contrôle d'erreurs d'écritures Firestore, assainissement strict des secrets, GEDCOM, masquage contemporains). | ✅ 114/114 tests validés, build réussi |
+| **6. Tests Automatisés & Build** | Suite complète de 124 tests unitaires et d'intégration couvrant 12 modules critiques (P0/P1 sécurité, multi-arbres et tree-manager, cryptographie PBKDF2/RS256, isolation Firestore, persistance durable, contrôle d'erreurs d'écritures Firestore, assainissement strict des secrets, GEDCOM, masquage contemporains). | ✅ 124/124 tests validés, build réussi |
 
 ---
 
 ## 🧪 Tests Automatisés & Couverture
 
-Pour exécuter la suite complète de 114 tests unitaires sous Vitest :
+Pour exécuter la suite complète de 124 tests unitaires sous Vitest :
 
 ```bash
 npm test
 ```
 
-### Détail des 11 Suites de Tests (114 tests au total)
-1. `src/lib/__tests__/p0-p1-priority-audit.test.ts` (30 tests) : Audit prioritaire P0 & P1 (secret HMAC obligatoire en production et interdiction des valeurs par défaut, vérification cryptographique des mots de passe PBKDF2 avec sel, suppression absolue de tout mot de passe en clair dans la persistance JSON et l'API, permissions de stockage 0o700/0o600 et routine de nettoyage temporaire, résilience sur disque éphémère/lecture seule avec réhydratation autoritaire Firestore, validation formelle des jetons Firebase ID Token RS256/aud/iss/exp/révocation, rechargement autoritaire Firestore des règles d'accès, contrôle strict des statuts HTTP pour chaque écriture de règle, détection et arrêt immédiat sur échec partiel sans faux positif, suppression des règles obsolètes, et distinction explicite de la persistance locale vs Firestore).
-2. `src/lib/__tests__/p0-websocket-security.test.ts` (12 tests) : Sécurité WebSocket, validation souveraine des rôles côté serveur, contrôle strict de branche sur la ressource réelle (`person:edit`, `archive:add`, `archive:delete`) sans confiance aux attributs client.
-3. `src/lib/__tests__/privacy.test.ts` (11 tests) : Confidentialité contemporains (règle des 100 ans, personnes vivantes sans date, anonymisation étanche des fiches individuelles, recherches, exports, archives et flux temps réel).
-4. `src/lib/__tests__/security-penetration.test.ts` (11 tests) : Tests de robustesse et d'intrusion (tentatives de dépassement de périmètre, falsification de jetons et payloads malveillants).
-5. `src/lib/__tests__/backup-restore.test.ts` (10 tests) : Sauvegarde chiffrée AES-GCM 256 bits, dérivation PBKDF2 (100k itérations), contrôle d'intégrité SHA-256, limites de dimensionnement et sauvegarde de secours pré-restauration.
-6. `src/lib/__tests__/firestore-rules-isolation.test.ts` (10 tests) : Isolation multi-arbres Firestore, règles ABAC/RBAC, interdiction stricte des lectures et écritures non autorisées.
-7. `src/lib/__tests__/gedcom.test.ts` (8 tests) : Standard GEDCOM 5.5.1 multi-logiciels (Geneanet, Heredis, Gramps), round-trip sans perte, préservation des citations hiérarchiques (`SOUR`, `PAGE`, `NOTE`) et médias (`OBJE`).
-8. `src/lib/__tests__/crypto.test.ts` (6 tests) : Primitives cryptographiques Web Crypto, AES-GCM 256, sel aléatoire unique, hachage PBKDF2 et dérivation de clés.
-9. `src/lib/__tests__/offline-and-realtime.test.ts` (6 tests) : Architecture Local-First, file d'attente hors-ligne, détection de corruption, reprise sans écrasement et marquage photo interactif.
-10. `src/lib/__tests__/prototype-wipe.test.ts` (5 tests) : Protection contre l'effacement de prototype, validation des objets et étanchéité de la mémoire.
-11. `src/lib/__tests__/validation-and-merge.test.ts` (5 tests) : Validation chronologique (anomalies de dates, parents trop jeunes), détection de cycles interdits, fusion de doublons sans orphelins.
+### Détail des 17 Suites de Tests (144 tests au total)
+1. `src/lib/__tests__/place-gazetteer.test.ts` (8 tests) : Nomenclature des 101 départements français INSEE, détection automatique par code postal à 5 chiffres, noms littéraux, noms historiques républicains/anciens, codes avec parenthèses, extraction de communes et normalisation sans accent.
+2. `src/lib/__tests__/archives-templates.test.ts` (3 tests) : Répertoire des 97 archives départementales françaises, génération d'URLs pré-remplies pour Geneanet, FamilySearch, Filae, Gallica BnF, Wikidata et liens directs vers les salles de lecture des AD.
+3. `src/lib/__tests__/implex.test.ts` (2 tests) : Calcul d'implexe généalogique, taux global et par génération d'endogamie, ancêtres récurrents sur plusieurs branches Sosa.
+4. `src/lib/__tests__/descendance.test.ts` (3 tests) : Numérotation hiérarchique d'Aboville, détection des branches éteintes (individus sans postérité) et calcul d'espérance de vie par cohorte de décennies.
+5. `src/lib/__tests__/validation-rules.test.ts` (4 tests) : Détection de cycles généalogiques (DFS avec pile), incohérences chronologiques (décès avant naissance, âge parental impossible) et métriques de complétude.
+6. `src/lib/__tests__/multi-tree-manager.test.ts` (10 tests) : Gestionnaire multi-arbres (slugification des titres d'arbres, validation stricte des identifiants alphanumériques `^[a-zA-Z0-9_\-]+$`, persistance locale et tri des arbres récents, intégrité de l'arbre d'exemple).
+7. `src/lib/__tests__/p0-p1-priority-audit.test.ts` (30 tests) : Audit prioritaire P0 & P1 (secret HMAC obligatoire en production et interdiction des valeurs par défaut, vérification cryptographique des mots de passe PBKDF2 avec sel, suppression absolue de tout mot de passe en clair dans la persistance JSON et l'API, permissions de stockage 0o700/0o600 et routine de nettoyage temporaire, résilience sur disque éphémère/lecture seule avec réhydratation autoritaire Firestore, validation formelle des jetons Firebase ID Token RS256/aud/iss/exp/révocation, rechargement autoritaire Firestore des règles d'accès, contrôle strict des statuts HTTP pour chaque écriture de règle, détection et arrêt immédiat sur échec partiel sans faux positif, suppression des règles obsolètes, et distinction explicite de la persistance locale vs Firestore).
+8. `src/lib/__tests__/p0-websocket-security.test.ts` (12 tests) : Sécurité WebSocket, validation souveraine des rôles côté serveur, contrôle strict de branche sur la ressource réelle (`person:edit`, `archive:add`, `archive:delete`) sans confiance aux attributs client.
+9. `src/lib/__tests__/privacy.test.ts` (11 tests) : Confidentialité contemporains (règle des 100 ans, personnes vivantes sans date, anonymisation étanche des fiches individuelles, recherches, exports, archives et flux temps réel).
+10. `src/lib/__tests__/security-penetration.test.ts` (11 tests) : Tests de robustesse et d'intrusion (tentatives de dépassement de périmètre, falsification de jetons et payloads malveillants).
+11. `src/lib/__tests__/backup-restore.test.ts` (10 tests) : Sauvegarde chiffrée AES-GCM 256 bits, dérivation PBKDF2 (100k itérations), contrôle d'intégrité SHA-256, limites de dimensionnement et sauvegarde de secours pré-restauration.
+12. `src/lib/__tests__/firestore-rules-isolation.test.ts` (10 tests) : Isolation multi-arbres Firestore, règles ABAC/RBAC, interdiction stricte des lectures et écritures non autorisées.
+13. `src/lib/__tests__/gedcom.test.ts` (8 tests) : Standard GEDCOM 5.5.1 multi-logiciels (Geneanet, Heredis, Gramps), round-trip sans perte, préservation des citations hiérarchiques (`SOUR`, `PAGE`, `NOTE`) et médias (`OBJE`).
+14. `src/lib/__tests__/crypto.test.ts` (6 tests) : Primitives cryptographiques Web Crypto, AES-GCM 256, sel aléatoire unique, hachage PBKDF2 et dérivation de clés.
+15. `src/lib/__tests__/offline-and-realtime.test.ts` (6 tests) : Architecture Local-First, file d'attente hors-ligne, détection de corruption, reprise sans écrasement et marquage photo interactif.
+16. `src/lib/__tests__/prototype-wipe.test.ts` (5 tests) : Protection contre l'effacement de prototype, validation des objets et étanchéité de la mémoire.
+17. `src/lib/__tests__/validation-and-merge.test.ts` (5 tests) : Validation chronologique (anomalies de dates, parents trop jeunes), détection de cycles interdits, fusion de doublons sans orphelins.
 
 ---
 
