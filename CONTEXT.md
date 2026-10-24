@@ -216,6 +216,14 @@ interface ArchiveDocument {
   - **Graphe relationnel D3 (`ForceGraphView.tsx`)** : Simulation de forces D3 (forces de lien, charge répulsive, centrage), manipulation tactile / drag & drop, et filtres d'arêtes (filiations directes, unions maritales ou réseau global).
   - **Référentiel des 97 Archives Départementales & Détection INSEE (`place-gazetteer.ts`, `archives-templates.ts`, `DepartmentDirectoryModal.tsx`)** : Référentiel complet des 101 départements français métropolitains et d'outre-mer avec détection intelligente des lieux (code postal, département, alias historiques d'Ancien Régime ou pré-1968), portail de recherche directe vers les archives départementales et passerelle de requêtes vers Geneanet, FamilySearch, Filae, Gallica BnF et Wikidata.
 
+### ADR-14 : Suppression Intégrale de l'Arbre Démo, du Mode Démonstration et Partitionnement par Salon
+- **Contexte** : Éliminer la confusion lors du partage d'un arbre généalogique où les utilisateurs ne distinguaient plus l'arbre partagé réel de l'arbre d'exemple ("Famille Martin") et où une bannière "Mode Démonstration" persistait.
+- **Décision** :
+  - **Suppression définitive de l'arbre démo** : Retrait du modèle "Famille Martin" et des actes de test par défaut. L'application démarre et affiche systématiquement l'arbre réel ou un arbre vierge prêt pour la saisie ou l'import GEDCOM.
+  - **Suppression du mode démonstration & prototype** : Retrait complet de la bannière d'avertissement "Mode Démonstration", du badge "Arbre démo" dans la barre de navigation et des mentions associées.
+  - **Partitionnement strict du cache local par salon** : Les clés de stockage (`genealogor_tree_v2_${roomId}`, archives, accès) sont indexées par identifiant de salon pour garantir qu'un arbre partagé ne charge jamais le cache d'un autre arbre.
+  - **Réinitialisation explicite** : Remplacement de l'ancien panneau d'effacement de prototype par une commande claire « Vider l'arbre en cours » avec confirmation.
+
 ---
 
 ## 4. Matrice des Rôles & Permissions
@@ -229,12 +237,13 @@ interface ArchiveDocument {
 
 ---
 
-## 5. Bilan des Piliers de Qualité & Conformité (144 Tests Validés)
+## 5. Bilan des Piliers de Qualité & Conformité (143 Tests Validés)
 
 1. **Règles Firestore & Isolation** : Vérifiées, testées et déployées en production avec modèle ABAC zéro-trust et étanchéité multi-arbres (`/trees/{treeId}`).
-2. **Mode Hors-Ligne & Résilience** : Gestionnaire de stockage versionné, détection de corruption avec backup d'urgence, file d'attente hors-ligne et gestion multi-arbres locale (`tree-manager.ts`).
+2. **Mode Hors-Ligne & Résilience** : Gestionnaire de stockage versionné et partitionné par salon (`${roomId}`), détection de corruption avec backup d'urgence, file d'attente hors-ligne et gestion multi-arbres locale (`tree-manager.ts`).
 3. **Chiffrement Réel des Sauvegardes** : AES-GCM 256 bits, dérivation PBKDF2 (100k itérations), empreinte SHA-256 et annulation de restauration sécurisée.
 4. **GEDCOM Multi-Logiciels** : Compatibilité certifiée avec Geneanet, Heredis, Geneatique, MyHeritage, FamilySearch (sources, médias, familles recomposées, dates approximatives).
 5. **Confidentialité Étendue des Vivants** : Anonymisation des individus de moins de 100 ans appliquée sur l'arbre, les fiches, les archives, le photo tagging, les recherches et les flux temps réel.
 6. **Analyses Généalogiques & Outils Avancés** : Éventail Sosa, numérotation d'Aboville, calcul de perte d'ancêtres (implexe), détection de cycles DFS, détection automatique des départements INSEE et répertoire des 97 Archives Départementales.
-7. **Tests Automatisés & Build** : 144 tests unitaires automatisés validés sous Vitest (17 suites de tests couvrant 100% des exigences), avec compilation de production réussie.
+7. **Expérience Partage & Arbre Vierge Sans Démo** : Disparition intégrale des mentions de prototype et de l'arbre démo pour une clarté totale lors du partage d'arbre.
+8. **Tests Automatisés & Build** : 143 tests unitaires automatisés validés sous Vitest (17 suites de tests couvrant 100% des exigences), avec compilation de production réussie.

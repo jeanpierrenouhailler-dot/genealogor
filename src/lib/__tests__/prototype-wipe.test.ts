@@ -16,7 +16,7 @@ global.localStorage = {
   length: 0,
 } as any;
 
-describe('Effacement du prototype & Arbre vierge', () => {
+describe('Initialisation propre & Arbre vierge', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -29,33 +29,17 @@ describe('Effacement du prototype & Arbre vierge', () => {
     expect(emptyTree.sourceHeader).toBe('Arbre Vierge');
   });
 
-  it('détecte correctement si les données actuelles sont celles du prototype ou un arbre vierge', () => {
-    const sampleTree = getSampleGenealogy();
+  it('ne contient aucun document d’archives de test par défaut', () => {
     const defaultArchives = getDefaultArchives();
-    expect(isSampleGenealogy(sampleTree, defaultArchives)).toBe(true);
+    expect(defaultArchives).toEqual([]);
 
-    const emptyTree = createEmptyGenealogy();
-    expect(isSampleGenealogy(emptyTree, [])).toBe(false);
+    const stored = getStoredArchives();
+    expect(stored).toEqual([]);
   });
 
-  it('respecte le flag d’effacement du prototype et ne réinjecte pas de documents démo', () => {
-    localStorage.setItem('genealogor_prototype_cleared', 'true');
-    const archives = getStoredArchives();
-    expect(archives).toEqual([]);
-
+  it('permet de vider les archives via clearStoredArchives', () => {
     clearStoredArchives();
     expect(getStoredArchives()).toEqual([]);
-  });
-
-  it('permet de restaurer le prototype d’exemple sur demande', () => {
-    localStorage.setItem('genealogor_prototype_cleared', 'true');
-    expect(getStoredArchives()).toEqual([]);
-
-    // Restauration
-    localStorage.removeItem('genealogor_prototype_cleared');
-    const restored = getStoredArchives();
-    expect(restored.length).toBeGreaterThan(0);
-    expect(restored.some(a => a.id === 'doc-004')).toBe(true);
   });
 
   it('ne provoque pas d’erreur de validation ou de calcul Sosa sur un arbre vide', () => {

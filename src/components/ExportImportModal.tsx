@@ -18,9 +18,7 @@ interface ExportImportModalProps {
   accessList: BranchAccess[];
   onLoadGedcom: (newData: GenealogyData) => void;
   onRestoreBackup: (payload: { genealogy: GenealogyData; archives: ArchiveDocument[]; accessList: BranchAccess[] }) => void;
-  onResetSample: () => void;
-  onClearPrototype?: () => void;
-  isPrototypeActive?: boolean;
+  onClearTree?: () => void;
 }
 
 export const ExportImportModal: React.FC<ExportImportModalProps> = ({
@@ -31,9 +29,7 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   accessList,
   onLoadGedcom,
   onRestoreBackup,
-  onResetSample,
-  onClearPrototype,
-  isPrototypeActive = false,
+  onClearTree,
 }) => {
   const fileInputGedRef = useRef<HTMLInputElement>(null);
   const fileInputBackupRef = useRef<HTMLInputElement>(null);
@@ -600,48 +596,43 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
               </div>
             </div>
 
-            {/* Section 3 : Gestion du Prototype & Arbre Vierge */}
+            {/* Section 3 : Réinitialisation de l'Arbre */}
             <div className="pt-2 border-t border-stone-200/80 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-serif font-bold text-stone-900 uppercase tracking-wider">
-                  Données du Prototype & Réinitialisation
+                  Réinitialisation de l'Arbre
                 </span>
-                {isPrototypeActive && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-semibold border border-amber-300">
-                    Arbre exemple actif
-                  </span>
-                )}
               </div>
 
-              {/* Panneau d'effacement complet du prototype */}
+              {/* Panneau de réinitialisation de l'arbre */}
               {showClearConfirm ? (
                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3 text-xs text-rose-950 animate-in fade-in duration-150">
                   <div className="flex items-center gap-2 font-bold text-rose-900">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>Confirmer l'effacement de l'arbre exemple et du prototype</span>
+                    <span>Confirmer la réinitialisation de l'arbre en cours</span>
                   </div>
                   <p className="text-stone-700 leading-relaxed text-[11px]">
-                    Cette action va <strong>effacer définitivement</strong> la famille Martin (individus et familles), les 4 actes et photographies d'archives de test, ainsi que les clés de partage de démonstration. L'espace redeviendra un <strong>arbre vierge</strong> prêt pour votre propre généalogie.
+                    Cette action va <strong>effacer les individus et les archives</strong> de l'arbre actuel. L'espace redeviendra un <strong>arbre vierge</strong> prêt pour votre propre généalogie ou un nouvel import GEDCOM.
                   </p>
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
-                        if (onClearPrototype) {
-                          onClearPrototype();
+                        if (onClearTree) {
+                          onClearTree();
                           setShowClearConfirm(false);
                           onClose();
                         }
                       }}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Oui, tout effacer (arbre vierge)</span>
+                      <span>Oui, réinitialiser l'arbre</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowClearConfirm(false)}
-                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 font-medium rounded-lg text-xs transition-colors"
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 font-medium rounded-lg text-xs transition-colors cursor-pointer"
                     >
                       Annuler
                     </button>
@@ -651,46 +642,32 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
                 <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-3">
                   <div className="space-y-0.5">
                     <span className="text-xs font-semibold text-stone-800 block">
-                      Effacer l'arbre exemple & données du prototype
+                      Vider l'arbre en cours pour repartir à zéro
                     </span>
                     <span className="text-[11px] text-stone-500 block">
-                      Supprime les personnes et actes de test pour démarrer un arbre entièrement vierge.
+                      Supprime les personnes et actes de l'arbre actif pour recommencer sur une base vierge.
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowClearConfirm(true)}
-                    className="shrink-0 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition-all flex items-center gap-1.5"
+                    className="shrink-0 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Effacer le prototype</span>
+                    <span>Vider l'arbre</span>
                   </button>
                 </div>
               )}
 
               {/* Raccourcis complémentaires */}
-              <div className="flex items-center justify-between text-xs text-stone-500 pt-1">
+              <div className="flex items-center justify-start text-xs text-stone-500 pt-1">
                 <button
                   type="button"
                   onClick={handleUndoRestore}
-                  className="text-stone-600 hover:text-amber-900 flex items-center gap-1.5 transition-colors"
+                  className="text-stone-600 hover:text-amber-900 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Undo2 className="w-3.5 h-3.5" />
                   <span>Annuler dernière restauration</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm('Restaurer l\'arbre exemple de la famille Martin (données de démonstration) ?')) {
-                      onResetSample();
-                      onClose();
-                    }
-                  }}
-                  className="text-stone-500 hover:text-amber-900 flex items-center gap-1.5 transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Recharger l'arbre d'exemple Martin</span>
                 </button>
               </div>
             </div>

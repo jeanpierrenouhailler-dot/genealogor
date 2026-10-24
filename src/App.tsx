@@ -27,8 +27,8 @@ import { getStoredTheme, applyTheme, toggleTheme, ThemeMode } from './lib/theme'
 import { getStoredCurrentRoom, setStoredCurrentRoom, recordKnownTree } from './lib/tree-manager';
 
 import { GenealogyData, Individual, ArchiveDocument, BranchAccess, BranchRole, BranchScope } from './types/genealogy';
-import { getSampleGenealogy, createEmptyGenealogy, isSampleGenealogy } from './lib/sample-data';
-import { getStoredArchives, saveStoredArchives, clearStoredArchives, getDefaultArchives } from './lib/archive-store';
+import { createEmptyGenealogy } from './lib/sample-data';
+import { getStoredArchives, saveStoredArchives, clearStoredArchives } from './lib/archive-store';
 import { filterGenealogyData } from './lib/branch-filter';
 import { realtimeClient } from './lib/realtime-client';
 import { verifyPassword } from './lib/crypto';
@@ -77,18 +77,27 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { Shield, Sparkles, Database, GitMerge, AlertTriangle, Trash2 } from 'lucide-react';
 
 export default function App() {
-  // Main state with versioned storage & recovery
+  // Real-time synchronization state & Active tree room
+  const [roomId, setRoomId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) return roomParam;
+    }
+    return getStoredCurrentRoom();
+  });
+
+  // Main state with versioned storage & recovery partitioned per tree room
   const [data, setData] = useState<GenealogyData>(() => {
-    const isCleared = typeof window !== 'undefined' && localStorage.getItem('genealogor_prototype_cleared') === 'true';
-    const fallback = isCleared ? createEmptyGenealogy() : getSampleGenealogy();
-    const res = getVersionedItem<GenealogyData>(STORAGE_KEYS.TREE, fallback);
+    const fallback = createEmptyGenealogy(roomId);
+    const roomKey = `${STORAGE_KEYS.TREE}_${roomId}`;
+    const res = getVersionedItem<GenealogyData>(roomKey, fallback);
     return res.data;
   });
 
   const [archives, setArchives] = useState<ArchiveDocument[]>(() => {
-    const isCleared = typeof window !== 'undefined' && localStorage.getItem('genealogor_prototype_cleared') === 'true';
-    const fallback = isCleared ? [] : getStoredArchives();
-    const res = getVersionedItem<ArchiveDocument[]>(STORAGE_KEYS.ARCHIVES, fallback);
+    const roomKey = `${STORAGE_KEYS.ARCHIVES}_${roomId}`;
+    const res = getVersionedItem<ArchiveDocument[]>(roomKey, []);
     return res.data;
   });
 
@@ -127,7 +136,7 @@ export default function App() {
 
   // Access control & Private branch links
   const [accessList, setAccessList] = useState<BranchAccess[]>(() => {
-    const res = getVersionedItem<BranchAccess[]>(STORAGE_KEYS.ACCESS, []);
+    const res = getVersionedItem<BranchAccess[]>(`${STORAGE_KEYS.ACCESS}_${roomId}`, []);
     return res.data;
   });
 
@@ -136,15 +145,6 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState<boolean>(true);
   const [pendingBranchAccess, setPendingBranchAccess] = useState<BranchAccess | null>(null);
 
-  // Real-time synchronization state & Active tree room
-  const [roomId, setRoomId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomParam = urlParams.get('room');
-      if (roomParam) return roomParam;
-    }
-    return getStoredCurrentRoom();
-  });
   const [connectedPeerCount, setConnectedPeerCount] = useState<number>(1);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -177,10 +177,22 @@ export default function App() {
     setIsUnlocked(true);
     setPendingBranchAccess(null);
 
+    const roomTreeKey = `${STORAGE_KEYS.TREE}_${newRoomId}`;
+    const roomArchKey = `${STORAGE_KEYS.ARCHIVES}_${newRoomId}`;
+    const roomAccessKey = `${STORAGE_KEYS.ACCESS}_${newRoomId}`;
+
+    const targetData = initialData || getVersionedItem<GenealogyData>(roomTreeKey, createEmptyGenealogy(newTitle || newRoomId)).data;
+    const targetArchives = getVersionedItem<ArchiveDocument[]>(roomArchKey, []).data;
+    const targetAccess = getVersionedItem<BranchAccess[]>(roomAccessKey, []).data;
+
+    setData(targetData);
+    setArchives(targetArchives);
+    setAccessList(targetAccess);
+    setSelectedPersonId(targetData.rootPersonId || Object.keys(targetData.individuals)[0] || '');
+
     if (initialData) {
-      setData(initialData);
+      setVersionedItem(roomTreeKey, initialData);
       setVersionedItem(STORAGE_KEYS.TREE, initialData);
-      setSelectedPersonId(initialData.rootPersonId || Object.keys(initialData.individuals)[0] || '');
       if (currentUser) {
         try {
           await saveTreeToFirestore(newRoomId, initialData, currentUser);
@@ -194,11 +206,12 @@ export default function App() {
         personCount: Object.keys(initialData.individuals).length,
         lastOpenedAt: Date.now(),
       });
-      showToast(`Arbre créé et activé : ${newTitle || initialData.sourceHeader || newRoomId}`);
+      showToast(`Arbre activé : ${newTitle || initialData.sourceHeader || newRoomId}`);
     } else {
       recordKnownTree({
         id: newRoomId,
-        title: newTitle || newRoomId,
+        title: newTitle || targetData.sourceHeader || newRoomId,
+        personCount: Object.keys(targetData.individuals).length,
         lastOpenedAt: Date.now(),
       });
       showToast(`Arbre activé : ${newTitle || newRoomId}`);
@@ -207,9 +220,6 @@ export default function App() {
 
   // Chronological anomalies detection
   const anomalies = useMemo(() => validateChronology(data), [data]);
-
-  // Détection si les données actuelles correspondent au prototype de démonstration
-  const isPrototypeActive = useMemo(() => isSampleGenealogy(data, archives), [data, archives]);
 
   // 1. Initialize Firebase Auth and Connection Verification
   useEffect(() => {
@@ -250,15 +260,23 @@ export default function App() {
     const unsubTree = subscribeToTree(
       roomId, 
       (remoteData) => {
-        if (remoteData && Object.keys(remoteData.individuals).length > 0) {
+        if (remoteData) {
           setData(remoteData);
+          setVersionedItem(`${STORAGE_KEYS.TREE}_${roomId}`, remoteData);
           setVersionedItem(STORAGE_KEYS.TREE, remoteData);
           setIsCloudSynced(true);
+          setSelectedPersonId(prev => prev || remoteData.rootPersonId || Object.keys(remoteData.individuals)[0] || '');
+          recordKnownTree({
+            id: roomId,
+            title: remoteData.sourceHeader || roomId,
+            personCount: Object.keys(remoteData.individuals).length,
+            lastOpenedAt: Date.now(),
+          });
         }
       },
       () => {
-        // Le document n'existe pas encore dans Firestore : l'initialiser avec l'arbre local
-        if (currentUser) {
+        // Le document n'existe pas encore dans Firestore : ne sauvegarder que si des données ont été saisies
+        if (currentUser && Object.keys(data.individuals).length > 0) {
           saveTreeToFirestore(roomId, data, currentUser).then(() => {
             setIsCloudSynced(true);
           }).catch(console.warn);
@@ -267,16 +285,18 @@ export default function App() {
     );
 
     const unsubArch = subscribeToArchives(roomId, (remoteArchives) => {
-      if (remoteArchives && remoteArchives.length > 0) {
+      if (remoteArchives) {
         setArchives(remoteArchives);
+        setVersionedItem(`${STORAGE_KEYS.ARCHIVES}_${roomId}`, remoteArchives);
         setVersionedItem(STORAGE_KEYS.ARCHIVES, remoteArchives);
         setIsCloudSynced(true);
       }
     });
 
     const unsubAccess = subscribeToAccessList(roomId, (remoteAccess) => {
-      if (remoteAccess && remoteAccess.length > 0) {
+      if (remoteAccess) {
         setAccessList(remoteAccess);
+        setVersionedItem(`${STORAGE_KEYS.ACCESS}_${roomId}`, remoteAccess);
         setVersionedItem(STORAGE_KEYS.ACCESS, remoteAccess);
       }
     });
@@ -585,8 +605,15 @@ export default function App() {
       rootPersonId: data.rootPersonId || updated.id,
     };
     setData(nextData);
+    setVersionedItem(`${STORAGE_KEYS.TREE}_${roomId}`, nextData);
     setVersionedItem(STORAGE_KEYS.TREE, nextData);
     setSelectedPersonId(updated.id);
+    recordKnownTree({
+      id: roomId,
+      title: nextData.sourceHeader || roomId,
+      personCount: Object.keys(nextData.individuals).length,
+      lastOpenedAt: Date.now(),
+    });
 
     // Broadcast via WebSocket
     realtimeClient.sendAction('person:edit', updated);
@@ -610,6 +637,7 @@ export default function App() {
   const handleAddArchive = async (newDoc: ArchiveDocument) => {
     const nextArchives = [newDoc, ...archives];
     setArchives(nextArchives);
+    setVersionedItem(`${STORAGE_KEYS.ARCHIVES}_${roomId}`, nextArchives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', newDoc);
 
@@ -630,6 +658,7 @@ export default function App() {
   const handleUpdateArchive = async (updated: ArchiveDocument) => {
     const nextArchives = archives.map(a => a.id === updated.id ? updated : a);
     setArchives(nextArchives);
+    setVersionedItem(`${STORAGE_KEYS.ARCHIVES}_${roomId}`, nextArchives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:add', updated);
 
@@ -650,6 +679,7 @@ export default function App() {
   const handleDeleteArchive = async (id: string) => {
     const nextArchives = archives.filter(a => a.id !== id);
     setArchives(nextArchives);
+    setVersionedItem(`${STORAGE_KEYS.ARCHIVES}_${roomId}`, nextArchives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, nextArchives);
     realtimeClient.sendAction('archive:delete', id);
 
@@ -668,7 +698,14 @@ export default function App() {
 
   const handleLoadGedcom = async (newData: GenealogyData) => {
     setData(newData);
+    setVersionedItem(`${STORAGE_KEYS.TREE}_${roomId}`, newData);
     setVersionedItem(STORAGE_KEYS.TREE, newData);
+    recordKnownTree({
+      id: roomId,
+      title: newData.sourceHeader || roomId,
+      personCount: Object.keys(newData.individuals).length,
+      lastOpenedAt: Date.now(),
+    });
     if (newData.rootPersonId) setSelectedPersonId(newData.rootPersonId);
     realtimeClient.sendAction('tree:update', newData);
 
@@ -691,9 +728,19 @@ export default function App() {
     setArchives(payload.archives);
     setAccessList(payload.accessList);
 
+    setVersionedItem(`${STORAGE_KEYS.TREE}_${roomId}`, payload.genealogy);
     setVersionedItem(STORAGE_KEYS.TREE, payload.genealogy);
+    setVersionedItem(`${STORAGE_KEYS.ARCHIVES}_${roomId}`, payload.archives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, payload.archives);
+    setVersionedItem(`${STORAGE_KEYS.ACCESS}_${roomId}`, payload.accessList);
     setVersionedItem(STORAGE_KEYS.ACCESS, payload.accessList);
+
+    recordKnownTree({
+      id: roomId,
+      title: payload.genealogy.sourceHeader || roomId,
+      personCount: Object.keys(payload.genealogy.individuals).length,
+      lastOpenedAt: Date.now(),
+    });
 
     if (payload.genealogy.rootPersonId) {
       setSelectedPersonId(payload.genealogy.rootPersonId);
@@ -726,14 +773,10 @@ export default function App() {
     setEditingPerson(newPerson);
   };
 
-  const handleClearPrototype = async () => {
-    const emptyTree = createEmptyGenealogy('Mon Arbre Généalogique');
+  const handleClearTree = async () => {
+    const emptyTree = createEmptyGenealogy(data.sourceHeader || roomId);
     const emptyArchives: ArchiveDocument[] = [];
     const emptyAccess: BranchAccess[] = [];
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('genealogor_prototype_cleared', 'true');
-    }
 
     setData(emptyTree);
     setArchives(emptyArchives);
@@ -741,8 +784,15 @@ export default function App() {
     setSelectedPersonId('');
     setSelectedArchiveId('');
 
+    const roomTreeKey = `${STORAGE_KEYS.TREE}_${roomId}`;
+    const roomArchKey = `${STORAGE_KEYS.ARCHIVES}_${roomId}`;
+    const roomAccessKey = `${STORAGE_KEYS.ACCESS}_${roomId}`;
+
+    setVersionedItem(roomTreeKey, emptyTree);
     setVersionedItem(STORAGE_KEYS.TREE, emptyTree);
+    setVersionedItem(roomArchKey, emptyArchives);
     setVersionedItem(STORAGE_KEYS.ARCHIVES, emptyArchives);
+    setVersionedItem(roomAccessKey, emptyAccess);
     setVersionedItem(STORAGE_KEYS.ACCESS, emptyAccess);
     clearStoredArchives();
 
@@ -754,39 +804,20 @@ export default function App() {
       console.warn('Erreur Firestore lors de la réinitialisation', e);
     }
 
-    showToast('Toutes les données du prototype ont été effacées. Arbre vierge prêt.');
-  };
+    recordKnownTree({
+      id: roomId,
+      title: emptyTree.sourceHeader || roomId,
+      personCount: 0,
+      lastOpenedAt: Date.now(),
+    });
 
-  const handleResetSample = async () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('genealogor_prototype_cleared');
-    }
-    const sample = getSampleGenealogy();
-    const defaultArchives = getDefaultArchives();
-
-    setData(sample);
-    setArchives(defaultArchives);
-    setVersionedItem(STORAGE_KEYS.TREE, sample);
-    setVersionedItem(STORAGE_KEYS.ARCHIVES, defaultArchives);
-    saveStoredArchives(defaultArchives);
-
-    const rootId = sample.rootPersonId || Object.keys(sample.individuals)[0] || '';
-    setSelectedPersonId(rootId);
-    realtimeClient.sendAction('tree:update', sample);
-
-    try {
-      await saveTreeToFirestore(roomId, sample, currentUser);
-      for (const docItem of defaultArchives) {
-        await saveArchiveToFirestore(roomId, docItem, currentUser);
-      }
-    } catch (e) {}
-
-    showToast('Arbre de démonstration (Famille Martin) rechargé.');
+    showToast('L\'arbre actuel a été réinitialisé. Arbre vierge prêt.');
   };
 
   const handleAddAccessRule = async (newAcc: BranchAccess) => {
     const next = [newAcc, ...accessList];
     setAccessList(next);
+    setVersionedItem(`${STORAGE_KEYS.ACCESS}_${roomId}`, next);
     setVersionedItem(STORAGE_KEYS.ACCESS, next);
     try {
       await saveAccessToFirestore(roomId, newAcc, currentUser);
@@ -827,34 +858,12 @@ export default function App() {
         userRole={userRole}
         connectedPeerCount={connectedPeerCount}
         isWsConnected={isWsConnected}
-        treeTitle={data.sourceHeader || 'Famille Martin'}
+        treeTitle={data.sourceHeader || roomId || 'Mon Arbre'}
         currentUser={currentUser}
         onLogin={handleLogin}
         onLogout={handleLogout}
         isCloudSynced={isCloudSynced}
-        isPrototypeActive={isPrototypeActive}
       />
-
-      {/* Prototype active banner with quick erase action */}
-      {isPrototypeActive && (
-        <div className="bg-amber-50/90 border-b border-amber-200/90 px-4 md:px-8 py-2 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200 text-amber-900 uppercase tracking-wide">
-              Mode Démonstration
-            </span>
-            <span className="text-amber-900">
-              Vous visualisez actuellement l'arbre d'exemple (Famille Martin & actes de test).
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsExportModalOpen(true)}
-            className="text-xs font-semibold text-rose-800 hover:text-rose-950 underline hover:no-underline flex items-center gap-1 cursor-pointer"
-          >
-            Effacer toutes les données du prototype →
-          </button>
-        </div>
-      )}
 
       {/* Anomalies alert bar if any detected */}
       {anomalies.length > 0 && activeTab === 'tree' && (
@@ -895,7 +904,6 @@ export default function App() {
             archiveCountByPerson={archiveCountByPerson}
             onAddNewPerson={handleCreateNewPerson}
             onOpenImportModal={() => setIsExportModalOpen(true)}
-            onResetSample={handleResetSample}
           />
         )}
 
@@ -1088,9 +1096,7 @@ export default function App() {
         accessList={accessList}
         onLoadGedcom={handleLoadGedcom}
         onRestoreBackup={handleRestoreBackup}
-        onResetSample={handleResetSample}
-        onClearPrototype={handleClearPrototype}
-        isPrototypeActive={isPrototypeActive}
+        onClearTree={handleClearTree}
       />
 
       {/* Merge Duplicates Modal */}
@@ -1100,6 +1106,7 @@ export default function App() {
         data={data}
         onMergeComplete={(newData) => {
           setData(newData);
+          setVersionedItem(`${STORAGE_KEYS.TREE}_${roomId}`, newData);
           setVersionedItem(STORAGE_KEYS.TREE, newData);
           realtimeClient.sendAction('tree:update', newData);
           try {
@@ -1142,7 +1149,7 @@ export default function App() {
         onOpenTreeManager={() => setIsTreeManagerOpen(true)}
         onOpenDeptDirectory={() => setIsDeptDirectoryOpen(true)}
         currentRoomId={roomId}
-        currentTreeTitle={data.sourceHeader || 'Famille Martin'}
+        currentTreeTitle={data.sourceHeader || roomId || 'Mon Arbre'}
         personCount={Object.keys(data.individuals).length}
         themeMode={themeMode}
         onToggleTheme={handleToggleTheme}
@@ -1161,7 +1168,7 @@ export default function App() {
         isOpen={isTreeManagerOpen}
         onClose={() => setIsTreeManagerOpen(false)}
         currentRoomId={roomId}
-        currentTreeTitle={data.sourceHeader || 'Famille Martin'}
+        currentTreeTitle={data.sourceHeader || roomId || 'Mon Arbre'}
         currentPersonCount={Object.keys(data.individuals).length}
         currentArchiveCount={archives.length}
         currentUser={currentUser}

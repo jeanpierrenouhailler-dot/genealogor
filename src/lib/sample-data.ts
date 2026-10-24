@@ -309,10 +309,6 @@ export function createEmptyGenealogy(title = 'Mon Arbre Généalogique'): Geneal
   };
 }
 
-export function isSampleGenealogy(data?: GenealogyData | null, archives?: ArchiveDocument[] | null): boolean {
-  if (!data) return false;
-  const hasMartinRoot = !!data.individuals?.['@I1@'] && data.individuals['@I1@']?.name?.includes('Martin');
-  const hasMartinFamily = !!data.families?.['@F1@'];
-  const hasSampleArchives = !!archives?.some(a => a.id === 'doc-001' || a.id === 'doc-004');
-  return hasMartinRoot || hasMartinFamily || hasSampleArchives;
+export function isSampleGenealogy(_data?: GenealogyData | null, _archives?: ArchiveDocument[] | null): boolean {
+  return false;
 }

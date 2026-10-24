@@ -10,12 +10,11 @@ import {
   recordKnownTree, 
   removeKnownTreeFromLocal, 
   slugifyTreeId, 
-  isValidTreeId,
-  DEFAULT_SAMPLE_TREE
+  isValidTreeId
 } from '../lib/tree-manager';
 import { listUserTreesFromFirestore, TreeFirestoreSummary } from '../lib/firestore-sync';
 import { InfoTooltip } from './InfoTooltip';
-import { getSampleGenealogy, createEmptyGenealogy } from '../lib/sample-data';
+import { createEmptyGenealogy } from '../lib/sample-data';
 import { GenealogyData } from '../types/genealogy';
 
 interface TreeManagerModalProps {
@@ -50,7 +49,6 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newSlug, setNewSlug] = useState('');
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
-  const [starterTemplate, setStarterTemplate] = useState<'empty' | 'sample'>('empty');
   const [formError, setFormError] = useState<string | null>(null);
 
   // Charger les arbres connus et Firestore à l'ouverture
@@ -131,7 +129,6 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
         personCount: ft.personCount ?? existing?.personCount,
         ownerEmail: ft.ownerEmail,
         lastOpenedAt: existing?.lastOpenedAt || Date.now(),
-        isSample: ft.id === DEFAULT_SAMPLE_TREE.id,
       });
     }
 
@@ -182,16 +179,13 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
     }
 
     const title = newTitle.trim() || `Arbre ${cleanId}`;
-    const initialData = starterTemplate === 'sample' 
-      ? getSampleGenealogy() 
-      : createEmptyGenealogy(title);
-
+    const initialData = createEmptyGenealogy(title);
     initialData.sourceHeader = title;
 
     recordKnownTree({
       id: cleanId,
       title,
-      personCount: Object.keys(initialData.individuals).length,
+      personCount: 0,
       lastOpenedAt: Date.now(),
     });
 
@@ -243,7 +237,7 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
                   Arbre Actif
                 </span>
                 <span className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 truncate">
-                  {currentTreeTitle || 'Famille Martin'}
+                  {currentTreeTitle || currentRoomId || 'Mon Arbre'}
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-stone-600 dark:text-stone-300 font-mono">
@@ -357,11 +351,6 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
                               Actif
                             </span>
                           )}
-                          {tree.isSample && (
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-700">
-                              Démonstration
-                            </span>
-                          )}
                         </div>
 
                         <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 font-mono">
@@ -398,12 +387,12 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
                           </button>
                         )}
 
-                        {/* Supprimer de l'historique local (sauf sample et arbre actif) */}
-                        {!tree.isSample && !isCurrent && (
+                        {/* Supprimer de l'historique local (sauf arbre actif) */}
+                        {!isCurrent && (
                           <button
                             type="button"
                             onClick={(e) => handleDeleteLocal(e, tree.id)}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                             title="Retirer de l'historique local"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -500,55 +489,12 @@ export const TreeManagerModal: React.FC<TreeManagerModalProps> = ({
 
               </div>
 
-              {/* Point de départ */}
-              <div className="space-y-2">
-                <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 block">
-                  Contenu initial de l'arbre
-                </span>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-colors ${
-                    starterTemplate === 'empty'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'
-                      : 'bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 hover:bg-stone-50'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="template"
-                      value="empty"
-                      checked={starterTemplate === 'empty'}
-                      onChange={() => setStarterTemplate('empty')}
-                      className="mt-0.5 text-amber-800 focus:ring-amber-800"
-                    />
-                    <div className="text-xs space-y-0.5">
-                      <strong className="block text-stone-900 dark:text-stone-100">Arbre Vierge</strong>
-                      <span className="text-stone-500 dark:text-stone-400">
-                        Démarrez une nouvelle généalogie vide prête pour la saisie manuelle ou un import GEDCOM (.ged).
-                      </span>
-                    </div>
-                  </label>
-
-                  <label className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-colors ${
-                    starterTemplate === 'sample'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'
-                      : 'bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 hover:bg-stone-50'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="template"
-                      value="sample"
-                      checked={starterTemplate === 'sample'}
-                      onChange={() => setStarterTemplate('sample')}
-                      className="mt-0.5 text-amber-800 focus:ring-amber-800"
-                    />
-                    <div className="text-xs space-y-0.5">
-                      <strong className="block text-stone-900 dark:text-stone-100">Copie Arbre Martin</strong>
-                      <span className="text-stone-500 dark:text-stone-400">
-                        Duplique les 4 générations d'exemple avec photos pour s'entraîner ou faire des tests.
-                      </span>
-                    </div>
-                  </label>
-                </div>
+              {/* Information d'initialisation */}
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-300">
+                <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+                <p className="leading-relaxed">
+                  Le nouvel arbre sera initialisé vierge et dédié à ce salon. Vous pourrez y ajouter directement vos ancêtres ou importer un fichier GEDCOM (.ged).
+                </p>
               </div>
 
               {formError && (

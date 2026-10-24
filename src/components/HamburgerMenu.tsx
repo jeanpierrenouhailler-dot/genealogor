@@ -104,7 +104,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
 
             <div>
               <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 truncate">
-                {currentTreeTitle || 'Famille Martin'}
+                {currentTreeTitle || currentRoomId || 'Mon Arbre'}
               </h3>
               {personCount !== undefined && (
                 <p className="text-[11px] text-stone-500 dark:text-stone-400 font-mono mt-0.5">

@@ -3,6 +3,19 @@
 Toutes les modifications notables apportées au projet **Genealogor** sont consignées dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.8.0] — 2026-10-24
+
+### 🧹 Supprimé & Clarifié — Suppression Complète de l'Arbre Démo & Mode Démonstration
+- **Suppression intégrale de l'arbre démo et du mode démonstration** :
+  - Suppression de la bannière persistante « Mode Démonstration » et de l'indicateur d'arbre démo dans la barre supérieure.
+  - Suppression du modèle codé en dur « Famille Martin » dans la liste des arbres connus et des sélecteurs.
+  - L'ouverture d'un arbre partagé ou la création d'un arbre affiche directement l'arbre réel ou un arbre vierge propre prêt pour la saisie ou l'import GEDCOM, sans confusion.
+- **Cloisonnement strict du cache local par salon (`roomId`)** :
+  - Les données de l'arbre (`genealogor_tree_v2_{roomId}`), des archives et des accès sont désormais indexées par identifiant de salon.
+  - Rejoindre un arbre partagé tiers (ex: `?room=famille-dupont`) ne charge plus jamais les données de l'arbre précédent en cache local.
+- **Réinitialisation propre de l'arbre actif** :
+  - L'action « Effacer le prototype » est remplacée par « Réinitialiser l'arbre » dans le menu Sauvegardes & GEDCOM, permettant de vider l'arbre courant avec confirmation explicite.
+
 ## [2.7.0] — 2026-10-23
 
 ### 🌟 Ajouté — Intégration des Meilleures Fonctionnalités du Dépôt GitHub (nouhailler/genealogor)

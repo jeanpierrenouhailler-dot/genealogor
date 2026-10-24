@@ -25,7 +25,7 @@ import {
   removeKnownTreeFromLocal,
   getStoredCurrentRoom,
   setStoredCurrentRoom,
-  DEFAULT_SAMPLE_TREE
+  DEFAULT_TREE_ID
 } from '../tree-manager';
 
 describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
@@ -41,8 +41,8 @@ describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
     });
 
     it('doit retourner un slug par défaut si la chaîne ne contient aucun caractère valide', () => {
-      expect(slugifyTreeId('   ***   ')).toBe('arbre-sans-titre');
-      expect(slugifyTreeId('')).toBe('arbre-sans-titre');
+      expect(slugifyTreeId('   ***   ')).toBe('mon-arbre');
+      expect(slugifyTreeId('')).toBe('mon-arbre');
     });
   });
 
@@ -65,11 +65,9 @@ describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
   });
 
   describe('Persistance et historique des arbres connus (KnownTrees)', () => {
-    it('doit inclure l\'arbre de démonstration par défaut', () => {
+    it('doit retourner une liste vide au démarrage sans injection d’arbre démo', () => {
       const trees = getKnownTrees();
-      expect(trees.length).toBeGreaterThanOrEqual(1);
-      expect(trees[0].id).toBe(DEFAULT_SAMPLE_TREE.id);
-      expect(trees[0].isSample).toBe(true);
+      expect(trees).toEqual([]);
     });
 
     it('doit enregistrer un nouvel arbre et le placer en tête de liste', () => {
@@ -80,7 +78,7 @@ describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
       });
 
       const updated = getKnownTrees();
-      expect(updated.length).toBe(2);
+      expect(updated.length).toBe(1);
       expect(updated[0].id).toBe('famille-bernard-1830');
       expect(updated[0].title).toBe('Famille Bernard d\'Auvergne');
       expect(updated[0].personCount).toBe(42);
@@ -106,7 +104,7 @@ describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
       expect(bernardTrees[0].personCount).toBe(15);
     });
 
-    it('doit supprimer un arbre de l\'historique local sans supprimer l\'arbre de démonstration', () => {
+    it('doit supprimer un arbre de l\'historique local sans contrainte', () => {
       recordKnownTree({
         id: 'famille-temporaire',
         title: 'Arbre temporaire',
@@ -116,16 +114,12 @@ describe('Gestionnaire Multi-Arbres (TreeManager)', () => {
 
       const afterDelete = removeKnownTreeFromLocal('famille-temporaire');
       expect(afterDelete.some(t => t.id === 'famille-temporaire')).toBe(false);
-
-      // L'arbre d'exemple ne peut être supprimé
-      const afterSampleDelete = removeKnownTreeFromLocal(DEFAULT_SAMPLE_TREE.id);
-      expect(afterSampleDelete.some(t => t.id === DEFAULT_SAMPLE_TREE.id)).toBe(true);
     });
   });
 
   describe('Gestion du salon actif (StoredCurrentRoom)', () => {
-    it('doit retourner le salon par défaut si rien n\'est stocké', () => {
-      expect(getStoredCurrentRoom()).toBe(DEFAULT_SAMPLE_TREE.id);
+    it('doit retourner le salon par défaut (mon-arbre) si rien n\'est stocké', () => {
+      expect(getStoredCurrentRoom()).toBe(DEFAULT_TREE_ID);
     });
 
     it('doit mémoriser et restituer le salon actif sélectionné', () => {

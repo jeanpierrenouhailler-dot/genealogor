@@ -17,7 +17,6 @@ interface TreeViewProps {
   archiveCountByPerson?: Record<string, number>;
   onAddNewPerson?: () => void;
   onOpenImportModal?: () => void;
-  onResetSample?: () => void;
 }
 
 export const TreeView: React.FC<TreeViewProps> = ({
@@ -29,7 +28,6 @@ export const TreeView: React.FC<TreeViewProps> = ({
   archiveCountByPerson = {},
   onAddNewPerson,
   onOpenImportModal,
-  onResetSample,
 }) => {
   const [treeMode, setTreeMode] = useState<'ancestors' | 'descendants'>('ancestors');
   const [generationsCount, setGenerationsCount] = useState<number>(4);
@@ -174,29 +172,30 @@ export const TreeView: React.FC<TreeViewProps> = ({
     );
   };
 
-  // Écran d'accueil pour arbre vierge (suite à l'effacement du prototype)
+  // Écran d'accueil pour arbre vierge
   if (!currentPerson || Object.keys(data.individuals).length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-4 md:px-8 py-12">
-        <div className="bg-white border border-stone-200/90 rounded-2xl p-8 sm:p-12 text-center shadow-xs space-y-6">
-          <div className="w-16 h-16 mx-auto bg-amber-50 text-amber-900 border border-amber-200/80 rounded-2xl flex items-center justify-center shadow-xs">
-            <GitFork className="w-8 h-8 text-amber-800" />
+        <div className="bg-white dark:bg-[#1A1D24] border border-stone-200/90 dark:border-stone-800 rounded-2xl p-8 sm:p-12 text-center shadow-xs space-y-6">
+          <div className="w-16 h-16 mx-auto bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl flex items-center justify-center shadow-xs">
+            <GitFork className="w-8 h-8 text-amber-800 dark:text-amber-400" />
           </div>
 
           <div className="space-y-2 max-w-lg mx-auto">
-            <h2 className="font-serif text-2xl font-bold text-stone-900">
-              Votre arbre généalogique est vierge
+            <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-stone-100">
+              Votre arbre généalogique est prêt
             </h2>
-            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
-              Toutes les données du prototype ont été effacées. Votre base généalogique est prête à accueillir vos propres ancêtres :
+            <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 leading-relaxed">
+              Cet arbre ne contient encore aucun individu. Vous pouvez commencer à saisir vos ancêtres ou importer un fichier GEDCOM (.ged) :
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             {onOpenImportModal && (
               <button
+                type="button"
                 onClick={onOpenImportModal}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold rounded-xl shadow-sm transition-all cursor-pointer"
               >
                 <Upload className="w-4 h-4" />
                 <span>Importer un fichier GEDCOM (.ged)</span>
@@ -205,26 +204,15 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
             {onAddNewPerson && (
               <button
+                type="button"
                 onClick={onAddNewPerson}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-xl border border-stone-300 transition-all"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-semibold rounded-xl border border-stone-300 dark:border-stone-700 transition-all cursor-pointer"
               >
-                <UserPlus className="w-4 h-4 text-amber-800" />
+                <UserPlus className="w-4 h-4 text-amber-800 dark:text-amber-400" />
                 <span>Créer la première personne</span>
               </button>
             )}
           </div>
-
-          {onResetSample && (
-            <div className="pt-6 border-t border-stone-100 flex items-center justify-center text-xs text-stone-500">
-              <button
-                onClick={onResetSample}
-                className="hover:text-amber-900 flex items-center gap-1.5 transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Recharger l'arbre exemple Martin (démonstration)</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
